@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: auth_postgres
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: auth123
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
