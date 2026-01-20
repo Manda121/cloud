@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Application React Web Map
+  web-map:
+    build:
+      context: .
+      args:
+        - REACT_APP_API_AUTH_URL=http://localhost:3001/api/auth
+        - REACT_APP_API_SIGNALEMENTS_URL=http://localhost:3001/api
+        - REACT_APP_TILE_SERVER_URL=http://localhost:8080/tile/{z}/{x}/{y}.png
+    ports:
+      - "3000:80"
+    depends_on:
+      - tile-server
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Serveur de tuiles offline (OpenStreetMap)
+  tile-server:
+    image: overv/openstreetmap-tile-server
+    volumes:
+      - osm-data:/data/database
+      - osm-tiles:/data/tiles
+    ports:
+      - "8080:80"
+    environment:
+      - THREADS=4
+      - OSM2PGSQL_EXTRA_ARGS=-C 4096
+    networks:
+      - app-network
+    restart: unless-stopped
+    # Note: Vous devrez télécharger les données d'Antananarivo
+    # et les importer dans ce conteneur
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  osm-data:
+  osm-tiles:

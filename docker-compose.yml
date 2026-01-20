@@ -1,0 +1,94 @@
+version: '3.8'
+
+# Docker Compose principal - Démarre tous les modules du projet
+# Utilisation: docker-compose up -d
+
+services:
+  # ==========================================
+  # MODULE 1: Identity Provider (Authentification)
+  # ==========================================
+  identity-provider:
+    build:
+      context: ./identity-provider
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - USE_FIREBASE=true
+      - AUTH_MODE=auto
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/auth_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # MODULE 2: Web Map (Application React)
+  # ==========================================
+  web-map:
+    build:
+      context: ./web-map
+      args:
+        - REACT_APP_API_AUTH_URL=http://localhost:3001/api/auth
+        - REACT_APP_API_SIGNALEMENTS_URL=http://localhost:3001/api
+        - REACT_APP_TILE_SERVER_URL=http://localhost:8080/tile/{z}/{x}/{y}.png
+    ports:
+      - "3000:80"
+    depends_on:
+      - identity-provider
+      - tile-server
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # Base de données PostgreSQL
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=auth_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./identity-provider/db/base.sql:/docker-entrypoint-initdb.d/01-base.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================
+  # Serveur de tuiles OpenStreetMap Offline
+  # ==========================================
+  tile-server:
+    image: overv/openstreetmap-tile-server
+    volumes:
+      - osm-data:/data/database
+      - osm-tiles:/data/tiles
+    ports:
+      - "8080:80"
+    environment:
+      - THREADS=4
+      - OSM2PGSQL_EXTRA_ARGS=-C 4096
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  osm-data:
+  osm-tiles:
