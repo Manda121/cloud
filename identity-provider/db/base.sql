@@ -10,4 +10,4 @@ CREATE TABLE users (
 );
 
 insert into users (email, password, firstname, lastname) values
-('notiavinamandaniaina@gmail.com', '1212manda', 'Mandaniaina', 'Notiavina');
+('test@gmail.com', 'test123', 'Mandaniaina', 'Notiavina');
