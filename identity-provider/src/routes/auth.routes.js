@@ -22,15 +22,15 @@ const ctrl = require('../controllers/auth.controller');
  *           type: string
  *     LoginRequest:
  *       type: object
+ *       required:
+ *         - email
+ *         - password
  *       properties:
  *         email:
  *           type: string
  *           format: email
  *         password:
  *           type: string
- *         idToken:
- *           type: string
- *           description: Firebase idToken (use when USE_FIREBASE=true)
  *     UnblockRequest:
  *       type: object
  *       required:
