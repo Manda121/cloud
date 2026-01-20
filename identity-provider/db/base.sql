@@ -11,6 +11,88 @@ CREATE TABLE users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
+CREATE TABLE roles (
+    id_role SERIAL PRIMARY KEY,
+    nom VARCHAR(30) UNIQUE NOT NULL
+);
+
+INSERT INTO roles (nom) VALUES
+('VISITEUR'),
+('UTILISATEUR'),
+('MANAGER');
+
+CREATE TABLE sessions (
+    id_session UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user UUID REFERENCES users(id_user) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE statuts_signalement (
+    id_statut SERIAL PRIMARY KEY,
+    libelle VARCHAR(30) UNIQUE NOT NULL
+);
+
+INSERT INTO statuts_signalement (libelle) VALUES
+('NOUVEAU'),
+('EN_COURS'),
+('TERMINE');
+
+CREATE TABLE entreprises (
+    id_entreprise SERIAL PRIMARY KEY,
+    nom VARCHAR(150) NOT NULL,
+    contact VARCHAR(100)
+);
+
+
+CREATE TABLE signalements (
+    id_signalement UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user UUID REFERENCES users(id_user),
+    id_statut INT REFERENCES statuts_signalement(id_statut),
+    id_entreprise INT REFERENCES entreprises(id_entreprise),
+    description TEXT,
+    surface_m2 NUMERIC(10,2),
+    budget NUMERIC(14,2),
+    date_signalement DATE DEFAULT CURRENT_DATE,
+
+    -- Cartographie
+    geom GEOMETRY(Point, 4326),
+
+    -- Synchronisation
+    source VARCHAR(20) CHECK (source IN ('LOCAL', 'FIREBASE')),
+    synced BOOLEAN DEFAULT FALSE,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE historique_statuts (
+    id_historique SERIAL PRIMARY KEY,
+    id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
+    id_statut INT REFERENCES statuts_signalement(id_statut),
+    date_changement TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id_manager UUID REFERENCES users(id_user)
+);
+
+
+CREATE VIEW v_stats_globales AS
+SELECT
+    COUNT(*) AS nb_signalements,
+    SUM(surface_m2) AS surface_totale,
+    SUM(budget) AS budget_total,
+    ROUND(
+        (SUM(CASE WHEN id_statut = 3 THEN 1 ELSE 0 END)::NUMERIC / COUNT(*)) * 100
+    , 2) AS avancement_pourcentage
+FROM signalements;
+
+
+CREATE INDEX idx_signalements_geom ON signalements USING GIST (geom);
+CREATE INDEX idx_signalements_statut ON signalements(id_statut);
+CREATE INDEX idx_signalements_user ON signalements(id_user);
+
+
 -- Index pour rechercher par firebase_uid
 CREATE INDEX idx_users_firebase_uid ON users(firebase_uid);
 
