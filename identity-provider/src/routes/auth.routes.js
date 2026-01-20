@@ -92,4 +92,55 @@ router.post('/login', ctrl.login);
  */
 router.post('/unblock', ctrl.unblock);
 
+/**
+ * @swagger
+ * /api/auth/status:
+ *   get:
+ *     summary: Vérifier le statut de connectivité et le mode d'authentification
+ *     responses:
+ *       200:
+ *         description: Statut actuel
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 online:
+ *                   type: boolean
+ *                   description: True si Firebase est accessible
+ *                 authMode:
+ *                   type: string
+ *                   enum: [firebase, local]
+ *                   description: Mode d'authentification actuel
+ *                 useFirebase:
+ *                   type: boolean
+ *                   description: Configuration USE_FIREBASE
+ *                 configuredMode:
+ *                   type: string
+ *                   description: Mode configuré (auto, firebase, local)
+ */
+router.get('/status', ctrl.status);
+
+/**
+ * @swagger
+ * /api/auth/refresh-connectivity:
+ *   post:
+ *     summary: Forcer le rafraîchissement du cache de connectivité
+ *     responses:
+ *       200:
+ *         description: Cache rafraîchi
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 online:
+ *                   type: boolean
+ *                 authMode:
+ *                   type: string
+ */
+router.post('/refresh-connectivity', ctrl.refreshConnectivity);
+
 module.exports = router;
