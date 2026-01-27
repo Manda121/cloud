@@ -2,6 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     firebase_uid TEXT UNIQUE,
@@ -24,17 +25,16 @@ CREATE TABLE IF NOT EXISTS roles (
 INSERT INTO roles (nom) VALUES
 ('VISITEUR'),
 ('UTILISATEUR'),
-('MANAGER')
-ON CONFLICT (nom) DO NOTHING;
+
+('MANAGER');
 
 CREATE TABLE IF NOT EXISTS sessions (
     id_session UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_user INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    id_user INTEGER REFERENCES users(id) ON DELETE CASCADE
     token TEXT UNIQUE NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS statuts_signalement (
     id_statut SERIAL PRIMARY KEY,
     libelle VARCHAR(30) UNIQUE NOT NULL
@@ -81,10 +81,16 @@ CREATE TABLE IF NOT EXISTS historique_statuts (
     id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
     id_statut INT REFERENCES statuts_signalement(id_statut),
     date_changement TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
     id_manager INTEGER REFERENCES users(id)
 );
 
 CREATE OR REPLACE VIEW v_stats_globales AS
+    id_manager UUID REFERENCES users(id_user)
+);
+
+
+CREATE VIEW v_stats_globales AS
 SELECT
     COUNT(*) AS nb_signalements,
     SUM(surface_m2) AS surface_totale,
@@ -99,6 +105,9 @@ FROM signalements;
 CREATE INDEX IF NOT EXISTS idx_signalements_geom ON signalements USING GIST (geom);
 CREATE INDEX IF NOT EXISTS idx_signalements_statut ON signalements(id_statut);
 CREATE INDEX IF NOT EXISTS idx_signalements_user ON signalements(id_user);
+CREATE INDEX idx_signalements_geom ON signalements USING GIST (geom);
+CREATE INDEX idx_signalements_statut ON signalements(id_statut);
+CREATE INDEX idx_signalements_user ON signalements(id_user);
 
 -- Index pour rechercher par firebase_uid
 CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
@@ -107,3 +116,4 @@ CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
 INSERT INTO users (email, password, firstname, lastname) VALUES
 ('test@gmail.com', 'test123', 'Mandaniaina', 'Notiavina')
 ON CONFLICT (email) DO NOTHING;
+
