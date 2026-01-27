@@ -4,11 +4,12 @@ import HomePage from '../views/HomePage.vue'
 import LoginPage from '../views/Login.vue'
 import CartePage from '../views/Carte.vue'
 import SignalementPage from '../views/Signalement.vue'
+import SignalementsListPage from '../views/SignalementsList.vue'
 
 const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
-    redirect: '/home'
+    redirect: '/carte'
   },
   {
     path: '/login',
@@ -24,6 +25,11 @@ const routes: Array<RouteRecordRaw> = [
     path: '/signalement',
     name: 'Signalement',
     component: SignalementPage
+  },
+  {
+    path: '/signalements',
+    name: 'SignalementsList',
+    component: SignalementsListPage
   },
   {
     path: '/home',
