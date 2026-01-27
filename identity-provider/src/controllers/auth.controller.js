@@ -54,7 +54,25 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { idToken, email, password } = req.body;
+    const authMode = process.env.AUTH_MODE || 'auto';
     
+    // Si AUTH_MODE est explicitement défini comme 'firebase', forcer Firebase (pas de fallback local)
+    const forceFirebase = authMode === 'firebase';
+    
+    // Si email+password provided et local user has a local password ET mode 'auto', prefer local login
+    if (!forceFirebase && email && password) {
+      const localUser = await localAuth.findByEmail(email);
+      if (localUser && localUser.password) {
+        console.log('[Auth Controller] Connexion en mode LOCAL (utilisateur local détecté)');
+        const result = await localAuth.login(email, password);
+        return res.json({
+          ...result,
+          authMode: 'local',
+          message: 'Connexion en mode local (utilisateur local)'
+        });
+      }
+    }
+
     // Vérifier si on est en ligne
     const online = await selector.isOnline();
     
