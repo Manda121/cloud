@@ -1,0 +1,85 @@
+version: '3.8'
+
+# Docker Compose principal pour lancer tous les modules
+# Utilisation: docker-compose up -d
+
+services:
+  # Base de données PostgreSQL avec PostGIS
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: cloud-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cloud_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/base.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Module Identity Provider (Authentification API)
+  identity-provider:
+    build:
+      context: ./identity-provider
+    container_name: cloud-identity-provider
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: cloud_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Module Web Map (Application React)
+  web-map:
+    build:
+      context: ./web-map
+      args:
+        - REACT_APP_API_AUTH_URL=/api/auth
+        - REACT_APP_API_SIGNALEMENTS_URL=/api
+        - REACT_APP_TILE_SERVER_URL=https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+    container_name: cloud-web-map
+    ports:
+      - "80:80"
+    depends_on:
+      - identity-provider
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Serveur de tuiles offline (optionnel)
+  # Décommentez cette section pour utiliser les cartes offline
+  # tile-server:
+  #   image: maptiler/tileserver-gl:latest
+  #   container_name: cloud-tile-server
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./tiles:/data
+  #   networks:
+  #     - app-network
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

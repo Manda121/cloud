@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  web-map:
+    build:
+      context: .
+      args:
+        - REACT_APP_API_AUTH_URL=/api/auth
+        - REACT_APP_API_SIGNALEMENTS_URL=/api
+        - REACT_APP_TILE_SERVER_URL=/tiles/{z}/{x}/{y}.png
+    ports:
+      - "80:80"
+    depends_on:
+      - identity-provider
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    external: true
