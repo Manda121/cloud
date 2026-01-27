@@ -2,8 +2,8 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS postgis;
 
-CREATE TABLE users (
-    id_user UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
     firebase_uid TEXT UNIQUE,
     email TEXT UNIQUE NOT NULL,
     password TEXT,
@@ -16,7 +16,7 @@ CREATE TABLE users (
 );
 
 
-CREATE TABLE roles (
+CREATE TABLE IF NOT EXISTS roles (
         id_role SERIAL PRIMARY KEY,
         nom VARCHAR(30) UNIQUE NOT NULL
 );
@@ -24,12 +24,10 @@ CREATE TABLE roles (
 INSERT INTO roles (nom) VALUES
 ('VISITEUR'),
 ('UTILISATEUR'),
-('MANAGER');
+('MANAGER')
+ON CONFLICT (nom) DO NOTHING;
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS postgis;
-
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     id_session UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_user INTEGER REFERENCES users(id) ON DELETE CASCADE,
     token TEXT UNIQUE NOT NULL,
@@ -37,7 +35,7 @@ CREATE TABLE sessions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE statuts_signalement (
+CREATE TABLE IF NOT EXISTS statuts_signalement (
     id_statut SERIAL PRIMARY KEY,
     libelle VARCHAR(30) UNIQUE NOT NULL
 );
@@ -45,18 +43,19 @@ CREATE TABLE statuts_signalement (
 INSERT INTO statuts_signalement (libelle) VALUES
 ('NOUVEAU'),
 ('EN_COURS'),
-('TERMINE');
+('TERMINE')
+ON CONFLICT (libelle) DO NOTHING;
 
 
 
-CREATE TABLE entreprises (
+CREATE TABLE IF NOT EXISTS entreprises (
     id_entreprise SERIAL PRIMARY KEY,
     nom VARCHAR(150) NOT NULL,
     contact VARCHAR(100)
 );
 
 
-CREATE TABLE signalements (
+CREATE TABLE IF NOT EXISTS signalements (
     id_signalement UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_user INTEGER REFERENCES users(id),
     id_statut INT REFERENCES statuts_signalement(id_statut),
@@ -77,7 +76,7 @@ CREATE TABLE signalements (
 );
 
 
-CREATE TABLE historique_statuts (
+CREATE TABLE IF NOT EXISTS historique_statuts (
     id_historique SERIAL PRIMARY KEY,
     id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
     id_statut INT REFERENCES statuts_signalement(id_statut),
@@ -85,8 +84,7 @@ CREATE TABLE historique_statuts (
     id_manager INTEGER REFERENCES users(id)
 );
 
-
-CREATE VIEW v_stats_globales AS
+CREATE OR REPLACE VIEW v_stats_globales AS
 SELECT
     COUNT(*) AS nb_signalements,
     SUM(surface_m2) AS surface_totale,
@@ -98,13 +96,14 @@ FROM signalements;
 
 
 -- Index pour recherche
-CREATE INDEX idx_signalements_geom ON signalements USING GIST (geom);
-CREATE INDEX idx_signalements_statut ON signalements(id_statut);
-CREATE INDEX idx_signalements_user ON signalements(id_user);
+CREATE INDEX IF NOT EXISTS idx_signalements_geom ON signalements USING GIST (geom);
+CREATE INDEX IF NOT EXISTS idx_signalements_statut ON signalements(id_statut);
+CREATE INDEX IF NOT EXISTS idx_signalements_user ON signalements(id_user);
 
 -- Index pour rechercher par firebase_uid
-CREATE INDEX idx_users_firebase_uid ON users(firebase_uid);
+CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
 
 -- Utilisateur de test (mot de passe non hashé pour test uniquement)
 INSERT INTO users (email, password, firstname, lastname) VALUES
-('test@gmail.com', 'test123', 'Mandaniaina', 'Notiavina');
+('test@gmail.com', 'test123', 'Mandaniaina', 'Notiavina')
+ON CONFLICT (email) DO NOTHING;
