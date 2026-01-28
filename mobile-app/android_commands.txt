@@ -1,0 +1,49 @@
+# 1. Aller dans le dossier du projet mobile
+cd C:\Users\miran\Documents\ITU_S5\Mr_Rojo\Manda\cloud\mobile-app
+
+# 2. Installer les dépendances du projet
+npm install
+
+# 3. Installer Capacitor (si pas déjà fait)
+npm install @capacitor/core @capacitor/cli @capacitor/android --save
+
+# 4. Initialiser Capacitor (si pas déjà fait)
+npx cap init
+
+# 5. Ajouter la plateforme Android (si pas déjà fait)
+npx cap add android
+
+erreur leaflet 
+ npm install --save-dev @types/leaflet
+# 6. Construire la web-app pour la version native
+npm run build
+
+# 7. Synchroniser les fichiers web avec le projet Android
+npx cap sync android
+
+# 8. Ouvrir le projet Android dans Android Studio
+npx cap open android
+
+# (Optionnel) Serveur de dev avec accès depuis mobile
+npm run dev -- --host=0.0.0.0 --port=5173
+
+# --- Commandes de vérification et corrections (exécutées)
+# Vérifier les vulnérabilités
+npm audit
+
+# Appliquer les correctifs non-brisants
+npm audit fix
+
+# Installer les types TypeScript pour Leaflet (corrige la build)
+npm install --save-dev @types/leaflet
+
+# Ajouter la plateforme Android (si `capacitor.config.ts` existe, ne pas faire `npx cap init`)
+npx cap add android
+
+# Construire et synchroniser (création de `dist` puis copie vers Android)
+npm run build
+npx cap sync android
+
+# Ouvrir Android Studio
+npx cap open android
+
