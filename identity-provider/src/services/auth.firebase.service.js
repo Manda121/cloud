@@ -28,7 +28,7 @@ async function saveUserToLocalDb(userData) {
              lastname = COALESCE($3, lastname),
              synced_from_firebase = true
          WHERE email = $4 OR firebase_uid = $1
-         RETURNING id, email, firebase_uid`,
+         RETURNING id_user, email, firebase_uid`,
         [uid, firstname, lastname, email]
       );
       console.log('[Firebase Service] Utilisateur local mis à jour:', email);
@@ -45,7 +45,7 @@ async function saveUserToLocalDb(userData) {
     const result = await db.query(
       `INSERT INTO users (firebase_uid, email, password, firstname, lastname, synced_from_firebase)
        VALUES ($1, $2, $3, $4, $5, true)
-       RETURNING id, email, firebase_uid`,
+       RETURNING id_user, email, firebase_uid`,
       [uid, email, hashedPassword, firstname || '', lastname || '']
     );
     
