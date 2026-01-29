@@ -31,7 +31,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE sessions (
     id_session UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_user INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    id_user UUID REFERENCES users(id_user) ON DELETE CASCADE,
     token TEXT UNIQUE NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -58,7 +58,7 @@ CREATE TABLE entreprises (
 
 CREATE TABLE signalements (
     id_signalement UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_user INTEGER REFERENCES users(id),
+    id_user UUID REFERENCES users(id_user),
     id_statut INT REFERENCES statuts_signalement(id_statut),
     id_entreprise INT REFERENCES entreprises(id_entreprise),
     description TEXT,
@@ -82,7 +82,7 @@ CREATE TABLE historique_statuts (
     id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
     id_statut INT REFERENCES statuts_signalement(id_statut),
     date_changement TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    id_manager INTEGER REFERENCES users(id)
+    id_manager UUID REFERENCES users(id_user)
 );
 
 

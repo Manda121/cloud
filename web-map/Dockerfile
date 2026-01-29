@@ -1,5 +1,5 @@
-# Build stage
-FROM node:18-alpine AS build
+# Development stage pour le web-map
+FROM node:18-bullseye
 
 WORKDIR /app
 
@@ -7,34 +7,10 @@ WORKDIR /app
 COPY package*.json ./
 
 # Installer les dépendances
-RUN npm install
+RUN npm install --legacy-peer-deps
 
-# Copier le code source
-COPY . .
+# Exposer le port 3001 (port de développement React)
+EXPOSE 3001
 
-# Build arguments pour les variables d'environnement
-ARG REACT_APP_API_AUTH_URL=http://identity-provider:3000/api/auth
-ARG REACT_APP_API_SIGNALEMENTS_URL=http://identity-provider:3000/api
-ARG REACT_APP_TILE_SERVER_URL=http://tile-server:8080/tile/{z}/{x}/{y}.png
-
-# Définir les variables d'environnement pour le build
-ENV REACT_APP_API_AUTH_URL=$REACT_APP_API_AUTH_URL
-ENV REACT_APP_API_SIGNALEMENTS_URL=$REACT_APP_API_SIGNALEMENTS_URL
-ENV REACT_APP_TILE_SERVER_URL=$REACT_APP_TILE_SERVER_URL
-
-# Build de l'application
-RUN npm run build
-
-# Production stage
-FROM nginx:alpine
-
-# Copier la configuration nginx
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Copier les fichiers buildés
-COPY --from=build /app/build /usr/share/nginx/html
-
-# Exposer le port
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+# Commande pour lancer l'application en mode développement
+CMD ["npm", "start"]
