@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useEffect, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import config from '../config/config';
 import './MapComponent.css';
@@ -43,8 +43,27 @@ const MapRecenter = ({ center, zoom }) => {
   return null;
 };
 
-const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement }) => {
+// Composant pour gérer les clics sur la carte
+const MapClickHandler = ({ onMapClick }) => {
+  useMapEvents({
+    click: (e) => {
+      if (onMapClick) {
+        onMapClick(e.latlng);
+      }
+    }
+  });
+  return null;
+};
+
+const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, onAddSignalement }) => {
   const mapRef = useRef(null);
+  const [clickedPosition, setClickedPosition] = useState(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newSignalement, setNewSignalement] = useState({
+    description: '',
+    surface_m2: '',
+    budget: ''
+  });
 
   // Formater la date
   const formatDate = (dateString) => {
@@ -81,6 +100,47 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement })
     return null;
   };
 
+  // Gérer le clic sur la carte
+  const handleMapClick = (latlng) => {
+    setClickedPosition(latlng);
+    setShowAddForm(true);
+    setNewSignalement({
+      description: '',
+      surface_m2: '',
+      budget: ''
+    });
+  };
+
+  // Soumettre le nouveau signalement
+  const handleSubmitSignalement = async (e) => {
+    e.preventDefault();
+    if (!clickedPosition || !onAddSignalement) return;
+
+    const signalementData = {
+      description: newSignalement.description,
+      surface_m2: parseFloat(newSignalement.surface_m2) || 0,
+      budget: parseFloat(newSignalement.budget) || 0,
+      geom: {
+        coordinates: [clickedPosition.lng, clickedPosition.lat]
+      }
+    };
+
+    try {
+      await onAddSignalement(signalementData);
+      setShowAddForm(false);
+      setClickedPosition(null);
+      setNewSignalement({ description: '', surface_m2: '', budget: '' });
+    } catch (error) {
+      console.error('Erreur ajout signalement:', error);
+    }
+  };
+
+  // Annuler l'ajout
+  const handleCancelAdd = () => {
+    setShowAddForm(false);
+    setClickedPosition(null);
+  };
+
   return (
     <div className="map-container">
       <MapContainer
@@ -93,6 +153,8 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement })
           url={config.TILE_SERVER_URL}
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
+
+        <MapClickHandler onMapClick={handleMapClick} />
 
         {selectedSignalement && getCoordinates(selectedSignalement) && (
           <MapRecenter 
@@ -117,6 +179,21 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement })
                 click: () => onMarkerClick && onMarkerClick(signalement)
               }}
             >
+              <Tooltip 
+                direction="top" 
+                offset={[0, -10]} 
+                opacity={0.95}
+                className="signalement-tooltip"
+              >
+                <div className="tooltip-content">
+                  <strong>{statut.label}</strong>
+                  <br />
+                  {signalement.surface_m2 && <span>{signalement.surface_m2} m²</span>}
+                  {signalement.budget && <span> • {formatBudget(signalement.budget)}</span>}
+                  <br />
+                  <small>{signalement.description?.substring(0, 50)}...</small>
+                </div>
+              </Tooltip>
               <Popup className="custom-popup">
                 <div className="popup-content">
                   <h3 className="popup-title">Signalement</h3>
@@ -166,7 +243,74 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement })
             </Marker>
           );
         })}
+
+        {/* Marqueur temporaire pour l'ajout */}
+        {clickedPosition && (
+          <Marker
+            position={[clickedPosition.lat, clickedPosition.lng]}
+            icon={createCustomIcon('#9b59b6')}
+          >
+            <Popup>
+              <div className="popup-content">
+                <strong>Nouvel emplacement</strong>
+                <p>Cliquez sur le formulaire pour ajouter un signalement</p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
       </MapContainer>
+
+      {/* Formulaire d'ajout de signalement */}
+      {showAddForm && clickedPosition && (
+        <div className="add-signalement-modal">
+          <div className="add-signalement-form">
+            <h3>Ajouter un signalement</h3>
+            <p className="location-info">
+              Position: {clickedPosition.lat.toFixed(5)}, {clickedPosition.lng.toFixed(5)}
+            </p>
+            <form onSubmit={handleSubmitSignalement}>
+              <div className="form-group">
+                <label>Description *</label>
+                <textarea
+                  value={newSignalement.description}
+                  onChange={(e) => setNewSignalement({...newSignalement, description: e.target.value})}
+                  placeholder="Décrivez le problème..."
+                  required
+                  rows={3}
+                />
+              </div>
+              <div className="form-group">
+                <label>Surface (m²)</label>
+                <input
+                  type="number"
+                  value={newSignalement.surface_m2}
+                  onChange={(e) => setNewSignalement({...newSignalement, surface_m2: e.target.value})}
+                  placeholder="ex: 150"
+                  min="0"
+                />
+              </div>
+              <div className="form-group">
+                <label>Budget estimé (MGA)</label>
+                <input
+                  type="number"
+                  value={newSignalement.budget}
+                  onChange={(e) => setNewSignalement({...newSignalement, budget: e.target.value})}
+                  placeholder="ex: 5000000"
+                  min="0"
+                />
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn-cancel" onClick={handleCancelAdd}>
+                  Annuler
+                </button>
+                <button type="submit" className="btn-submit">
+                  Ajouter
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Légende */}
       <div className="map-legend">

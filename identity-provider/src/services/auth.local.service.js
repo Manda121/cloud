@@ -130,6 +130,36 @@ async function unblockUser(email) {
   );
 }
 
+/**
+ * Récupérer tous les utilisateurs bloqués
+ */
+async function getBlockedUsers() {
+  const result = await db.query(
+    `SELECT id_user, email, firstname, lastname, attempts, created_at 
+     FROM users 
+     WHERE blocked = true 
+     ORDER BY created_at DESC`
+  );
+  return result.rows;
+}
+
+/**
+ * Débloquer un utilisateur par son ID
+ */
+async function unblockUserById(id) {
+  const result = await db.query(
+    `UPDATE users 
+     SET attempts=0, blocked=false 
+     WHERE id_user=$1 
+     RETURNING id_user, email, firebase_uid`,
+    [id]
+  );
+  if (result.rows.length === 0) {
+    throw new Error('Utilisateur non trouvé');
+  }
+  return result.rows[0];
+}
+
 module.exports = {
   register,
   registerFromFirebase,
@@ -138,4 +168,6 @@ module.exports = {
   findByFirebaseUid,
   updateUser,
   unblockUser,
+  getBlockedUsers,
+  unblockUserById,
 };

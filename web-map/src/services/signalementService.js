@@ -1,6 +1,7 @@
 import config from '../config/config';
+import axios from 'axios';
 
-// Données mockées pour les signalements (en attendant une vraie API)
+// Données mockées pour les signalements (stockées en localStorage)
 const MOCK_SIGNALEMENTS = [
   {
     id_signalement: '1',
@@ -167,11 +168,26 @@ const signalementService = {
     return Promise.resolve(entreprises);
   },
 
-  // Récupérer les utilisateurs bloqués (simulation)
+  // Récupérer les utilisateurs bloqués via l'API identity-provider
   getBlockedUsers: async () => {
-    // Pour l'instant, retourne une liste vide
-    // Cette fonctionnalité nécessiterait une vraie API
-    return Promise.resolve([]);
+    try {
+      const response = await axios.get(`${config.API_AUTH_URL}/blocked-users`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur récupération utilisateurs bloqués:', error.message);
+      return [];
+    }
+  },
+
+  // Débloquer un utilisateur via l'API identity-provider
+  unblockUser: async (userId) => {
+    try {
+      const response = await axios.post(`${config.API_AUTH_URL}/unblock/${userId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur déblocage utilisateur:', error.message);
+      throw error;
+    }
   }
 };
 

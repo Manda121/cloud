@@ -43,6 +43,17 @@ const HomePage = () => {
     setSelectedSignalement(signalement);
   };
 
+  const handleAddSignalement = async (signalementData) => {
+    try {
+      await signalementService.create(signalementData);
+      // Recharger les données après ajout
+      loadData();
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout du signalement:', err);
+      throw err;
+    }
+  };
+
   return (
     <div className="home-page">
       {/* Panneau des statistiques */}
@@ -67,6 +78,7 @@ const HomePage = () => {
             signalements={signalements}
             onMarkerClick={handleMarkerClick}
             selectedSignalement={selectedSignalement}
+            onAddSignalement={handleAddSignalement}
           />
         )}
       </div>
@@ -75,7 +87,7 @@ const HomePage = () => {
       <div className="visitor-info">
         <span>👁️ Mode visiteur</span>
         <span>|</span>
-        <span>Survolez les marqueurs pour voir les détails des travaux</span>
+        <span>Survolez les marqueurs pour voir les détails • Cliquez sur la carte pour ajouter un signalement</span>
       </div>
     </div>
   );

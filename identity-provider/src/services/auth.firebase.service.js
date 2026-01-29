@@ -92,6 +92,26 @@ async function updateUser(uid, data) {
   });
 }
 
+/**
+ * Activer/Débloquer un utilisateur dans Firebase
+ */
+async function enableUser(uid) {
+  const admin = initFirebase();
+  await admin.auth().updateUser(uid, {
+    disabled: false
+  });
+}
+
+/**
+ * Désactiver/Bloquer un utilisateur dans Firebase
+ */
+async function disableUser(uid) {
+  const admin = initFirebase();
+  await admin.auth().updateUser(uid, {
+    disabled: true
+  });
+}
+
 // Server-side sign in using Firebase REST API (email + password -> idToken)
 async function serverSignIn(email, password) {
   if (!FIREBASE_API_KEY) throw new Error('FIREBASE_API_KEY is not set in environment');
@@ -139,4 +159,4 @@ async function serverSignUp(email, password, firstname = '', lastname = '') {
   return data;
 }
 
-module.exports = { register, verifyIdToken, updateUser, serverSignIn, serverSignUp, saveUserToLocalDb };
+module.exports = { register, verifyIdToken, updateUser, enableUser, disableUser, serverSignIn, serverSignUp, saveUserToLocalDb };

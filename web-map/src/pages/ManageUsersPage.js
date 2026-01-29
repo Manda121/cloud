@@ -29,17 +29,25 @@ const ManageUsersPage = () => {
     }
   };
 
-  const handleUnblock = async (email) => {
+  const handleUnblock = async (userId, email) => {
     try {
       setUnblocking(email);
-      const result = await unblock(email);
       
-      if (result.success) {
+      // Utiliser la nouvelle API de déblocage par ID
+      if (userId) {
+        await signalementService.unblockUser(userId);
         setMessage({ type: 'success', text: `L'utilisateur ${email} a été débloqué` });
         // Retirer l'utilisateur de la liste
-        setBlockedUsers(blockedUsers.filter(u => u.email !== email));
+        setBlockedUsers(blockedUsers.filter(u => u.id_user !== userId));
       } else {
-        setMessage({ type: 'error', text: result.error });
+        // Fallback sur l'ancienne méthode par email
+        const result = await unblock(email);
+        if (result.success) {
+          setMessage({ type: 'success', text: `L'utilisateur ${email} a été débloqué` });
+          setBlockedUsers(blockedUsers.filter(u => u.email !== email));
+        } else {
+          setMessage({ type: 'error', text: result.error });
+        }
       }
     } catch (err) {
       setMessage({ type: 'error', text: 'Erreur lors du déblocage' });
@@ -55,7 +63,7 @@ const ManageUsersPage = () => {
     e.preventDefault();
     if (!manualEmail.trim()) return;
     
-    await handleUnblock(manualEmail);
+    await handleUnblock(null, manualEmail);
     setManualEmail('');
   };
 
@@ -120,7 +128,7 @@ const ManageUsersPage = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => handleUnblock(user.email)}
+                  onClick={() => handleUnblock(user.id_user, user.email)}
                   className="btn-unblock"
                   disabled={unblocking === user.email}
                 >
