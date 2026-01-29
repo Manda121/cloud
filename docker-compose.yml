@@ -37,7 +37,7 @@ services:
       DB_PORT: 5432
       DB_NAME: auth_db
       DB_USER: auth
-      DB_PASSWORD: auth123
+      DB_PASS: auth123
     ports:
       - "3000:3000"
     depends_on:
