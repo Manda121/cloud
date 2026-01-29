@@ -9,8 +9,8 @@ COPY package*.json ./
 # Installer les dépendances
 RUN npm install --legacy-peer-deps
 
-# Exposer le port 3001 (port de développement React)
-EXPOSE 3001
+# Exposer les ports (3001 pour React, 3002 pour le serveur backend)
+EXPOSE 3001 3002
 
 # Commande pour lancer l'application en mode développement
 CMD ["npm", "start"]

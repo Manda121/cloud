@@ -1,10 +1,16 @@
 import config from '../config/config';
 import axios from 'axios';
 
-// URL de base pour l'API signalements
-const API_URL = config.API_SIGNALEMENTS_URL + '/signalements';
+// URL de base pour les API locales (serveur web-map)
+const API_URL = '/api/signalements';
+const STATS_URL = '/api/stats';
+const ENTREPRISES_URL = '/api/entreprises';
 
 const signalementService = {
+  // =====================================================
+  // SIGNALEMENTS
+  // =====================================================
+
   // Récupérer tous les signalements depuis la base de données
   getAll: async () => {
     try {
@@ -74,10 +80,14 @@ const signalementService = {
     }
   },
 
+  // =====================================================
+  // STATISTIQUES / DASHBOARD
+  // =====================================================
+
   // Récupérer les statistiques globales
   getStats: async () => {
     try {
-      const response = await axios.get(`${API_URL}/stats/global`);
+      const response = await axios.get(STATS_URL);
       return response.data;
     } catch (error) {
       console.error('Erreur getStats:', error.message);
@@ -90,6 +100,47 @@ const signalementService = {
     }
   },
 
+  // Récupérer les statistiques par statut
+  getStatsByStatus: async () => {
+    try {
+      const response = await axios.get(`${STATS_URL}/by-status`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur getStatsByStatus:', error.message);
+      return [];
+    }
+  },
+
+  // Récupérer les statistiques par entreprise
+  getStatsByEntreprise: async () => {
+    try {
+      const response = await axios.get(`${STATS_URL}/by-entreprise`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur getStatsByEntreprise:', error.message);
+      return [];
+    }
+  },
+
+  // =====================================================
+  // ENTREPRISES
+  // =====================================================
+
+  // Récupérer les entreprises
+  getEntreprises: async () => {
+    try {
+      const response = await axios.get(ENTREPRISES_URL);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur getEntreprises:', error.message);
+      return [];
+    }
+  },
+
+  // =====================================================
+  // SYNCHRONISATION (placeholder)
+  // =====================================================
+
   // Synchroniser avec Firebase (placeholder pour future implémentation)
   syncWithFirebase: async () => {
     return { 
@@ -98,16 +149,9 @@ const signalementService = {
     };
   },
 
-  // Récupérer les entreprises
-  getEntreprises: async () => {
-    try {
-      const response = await axios.get(`${API_URL}/entreprises/list`);
-      return response.data;
-    } catch (error) {
-      console.error('Erreur getEntreprises:', error.message);
-      return [];
-    }
-  },
+  // =====================================================
+  // GESTION UTILISATEURS (via identity-provider)
+  // =====================================================
 
   // Récupérer les utilisateurs bloqués via l'API identity-provider
   getBlockedUsers: async () => {

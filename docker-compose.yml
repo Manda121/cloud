@@ -47,7 +47,7 @@ services:
       - app-network
     restart: unless-stopped
 
-  # Module Web Map (Application React)
+  # Module Web Map (Application React + Backend)
   web-map:
     build:
       context: ./web-map
@@ -55,10 +55,17 @@ services:
     environment:
       NODE_ENV: development
       REACT_APP_API_AUTH_URL: http://localhost:3000/api/auth
-      REACT_APP_API_SIGNALEMENTS_URL: http://localhost:3000/api
       REACT_APP_TILE_SERVER_URL: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+      # Variables pour le serveur backend (connexion PostgreSQL)
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: auth_db
+      DB_USER: auth
+      DB_PASS: auth123
+      SERVER_PORT: 3002
     ports:
       - "3001:3001"
+      - "3002:3002"
     volumes:
       - ./web-map:/app
       - /app/node_modules
