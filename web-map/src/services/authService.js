@@ -64,9 +64,21 @@ const authService = {
   },
 
   // Obtenir l'utilisateur actuel
-  getCurrentUser: () => {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+  getCurrentUser() {
+    const userStr = localStorage.getItem("user");
+
+    // 🔒 Protection
+    if (!userStr || userStr === "undefined") {
+      return null;
+    }
+
+    try {
+      return JSON.parse(userStr);
+    } catch (error) {
+      console.error("Utilisateur invalide dans localStorage :", error);
+      localStorage.removeItem("user");
+      return null;
+    }
   },
 
   // Vérifier si l'utilisateur est connecté

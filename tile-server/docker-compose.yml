@@ -1,0 +1,22 @@
+# Docker compose pour le serveur de tuiles (standalone)
+version: '3.8'
+
+services:
+  tile-server:
+    image: overv/openstreetmap-tile-server:2.3.0
+    container_name: tile-server
+    volumes:
+      - ../map/region.osm.pbf:/data/region.osm.pbf
+      - tile_data:/data/database
+      - tile_rendered:/data/tiles
+    environment:
+      - THREADS=4
+      - UPDATES=disabled
+    ports:
+      - "8080:80"
+    shm_size: 1g
+    command: run
+
+volumes:
+  tile_data:
+  tile_rendered:

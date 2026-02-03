@@ -151,7 +151,9 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, o
       >
         <TileLayer
           url={config.TILE_SERVER_URL}
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Tuiles servies localement'
+          maxZoom={19}
+          errorTileUrl=""
         />
 
         <MapClickHandler onMapClick={handleMapClick} />
