@@ -38,8 +38,12 @@ services:
       DB_NAME: auth_db
       DB_USER: auth
       DB_PASS: auth123
+      # Point to mounted Firebase service account JSON inside the container
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/fir-authentification-978a0-firebase-adminsdk-fbsvc-9049c47239.json
     ports:
       - "3000:3000"
+    volumes:
+      - ./identity-provider/secrets/fir-authentification-978a0-firebase-adminsdk-fbsvc-9049c47239.json:/run/secrets/fir-authentification-978a0-firebase-adminsdk-fbsvc-9049c47239.json:ro
     depends_on:
       postgres:
         condition: service_healthy
