@@ -1,6 +1,76 @@
 const localAuth = require('../services/auth.local.service');
 const firebaseAuth = require('../services/auth.firebase.service');
 const selector = require('../services/auth.selector');
+const jwt = require('jsonwebtoken');
+
+/**
+ * Valider un token JWT et retourner les informations de l'utilisateur
+ */
+exports.validateToken = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ valid: false, error: 'Token manquant' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    // Vérifier si c'est un token Firebase ou un JWT local
+    const online = await selector.isOnline();
+    
+    // Essayer d'abord de vérifier comme JWT local
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      // Récupérer les informations utilisateur à jour depuis la base
+      const user = await localAuth.findById(decoded.id);
+      
+      if (!user) {
+        return res.status(401).json({ valid: false, error: 'Utilisateur non trouvé' });
+      }
+      
+      if (user.blocked) {
+        return res.status(401).json({ valid: false, error: 'Compte bloqué' });
+      }
+      
+      return res.json({ 
+        valid: true, 
+        user: { 
+          id: user.id_user, 
+          email: user.email, 
+          firstname: user.firstname,
+          lastname: user.lastname,
+          firebase_uid: user.firebase_uid 
+        },
+        authMode: 'local'
+      });
+    } catch (jwtError) {
+      // Si ce n'est pas un JWT local valide et qu'on est online, essayer Firebase
+      if (online && selector.useFirebase()) {
+        try {
+          const decoded = await firebaseAuth.verifyIdToken(token);
+          return res.json({ 
+            valid: true, 
+            user: { 
+              id: decoded.uid, 
+              email: decoded.email,
+              firebase_uid: decoded.uid
+            },
+            authMode: 'firebase'
+          });
+        } catch (firebaseError) {
+          return res.status(401).json({ valid: false, error: 'Token Firebase invalide' });
+        }
+      }
+      
+      return res.status(401).json({ valid: false, error: 'Token invalide ou expiré' });
+    }
+  } catch (e) {
+    console.error('[Auth Controller] Erreur validation token:', e.message);
+    res.status(401).json({ valid: false, error: e.message });
+  }
+};
 
 /**
  * Inscription - utilise Firebase si en ligne, sinon local PostgreSQL

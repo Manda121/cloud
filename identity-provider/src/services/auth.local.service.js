@@ -107,6 +107,14 @@ async function findByEmail(email) {
 }
 
 /**
+ * Recherche un utilisateur par ID
+ */
+async function findById(id) {
+  const result = await db.query('SELECT * FROM users WHERE id_user = $1', [id]);
+  return result.rows[0] || null;
+}
+
+/**
  * Recherche un utilisateur par firebase_uid
  */
 async function findByFirebaseUid(uid) {
@@ -165,6 +173,7 @@ module.exports = {
   registerFromFirebase,
   login,
   findByEmail,
+  findById,
   findByFirebaseUid,
   updateUser,
   unblockUser,

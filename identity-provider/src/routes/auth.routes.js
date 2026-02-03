@@ -60,6 +60,32 @@ router.post('/register', ctrl.register);
 
 /**
  * @swagger
+ * /api/auth/validate:
+ *   get:
+ *     summary: Valider le token JWT et retourner les informations utilisateur
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token valide
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                 user:
+ *                   type: object
+ *                 authMode:
+ *                   type: string
+ *       401:
+ *         description: Token invalide ou expiré
+ */
+router.get('/validate', ctrl.validateToken);
+
+/**
+ * @swagger
  * /api/auth/login:
  *   post:
  *     summary: Authentification utilisateur

@@ -9,14 +9,32 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Vérifier si l'utilisateur est déjà connecté
-    const checkAuth = () => {
-      const currentUser = authService.getCurrentUser();
+    // Vérifier si l'utilisateur est déjà connecté au chargement
+    const checkAuth = async () => {
       const token = authService.getToken();
+      const storedUser = authService.getCurrentUser();
       
-      if (currentUser && token) {
-        setUser(currentUser);
-        setIsAuthenticated(true);
+      if (token && storedUser) {
+        try {
+          // Valider le token auprès du serveur
+          const validation = await authService.validateToken();
+          
+          if (validation.valid) {
+            // Token valide, utiliser les données du serveur ou du localStorage
+            setUser(validation.user || storedUser);
+            setIsAuthenticated(true);
+          } else {
+            // Token invalide, nettoyer
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+        } catch (error) {
+          console.error('Erreur validation token:', error);
+          // En cas d'erreur réseau, utiliser les données locales si disponibles
+          // pour permettre un mode "offline" basique
+          setUser(storedUser);
+          setIsAuthenticated(true);
+        }
       }
       setLoading(false);
     };

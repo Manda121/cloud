@@ -15,7 +15,6 @@ app.use(express.json());
 const authRoutes = require('./routes/auth.routes');
 
 app.use('/api/auth', authRoutes);
-app.use('/api/signalements', signalementRoutes);
 
 // Swagger UI
 const swaggerUi = require('swagger-ui-express');

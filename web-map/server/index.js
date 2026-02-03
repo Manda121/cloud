@@ -145,6 +145,13 @@ app.put('/api/signalements/:id', async (req, res) => {
   try {
     const { description, surface_m2, budget, id_entreprise, id_statut, geom } = req.body;
     
+    // Convertir les valeurs vides en null pour PostgreSQL
+    const cleanDescription = description || null;
+    const cleanSurface = surface_m2 !== '' && surface_m2 !== null ? parseFloat(surface_m2) : null;
+    const cleanBudget = budget !== '' && budget !== null ? parseFloat(budget) : null;
+    const cleanEntreprise = id_entreprise !== '' && id_entreprise !== null ? id_entreprise : null;
+    const cleanStatut = id_statut !== '' && id_statut !== null ? parseInt(id_statut) : null;
+    
     let query, params;
     if (geom && geom.coordinates) {
       const [lng, lat] = geom.coordinates;
@@ -153,25 +160,25 @@ app.put('/api/signalements/:id', async (req, res) => {
         SET description = COALESCE($1, description),
             surface_m2 = COALESCE($2, surface_m2),
             budget = COALESCE($3, budget),
-            id_entreprise = COALESCE($4, id_entreprise),
+            id_entreprise = $4,
             id_statut = COALESCE($5, id_statut),
             geom = ST_SetSRID(ST_MakePoint($6, $7), 4326)
         WHERE id_signalement = $8
         RETURNING *
       `;
-      params = [description, surface_m2, budget, id_entreprise, id_statut, lng, lat, req.params.id];
+      params = [cleanDescription, cleanSurface, cleanBudget, cleanEntreprise, cleanStatut, lng, lat, req.params.id];
     } else {
       query = `
         UPDATE signalements 
         SET description = COALESCE($1, description),
             surface_m2 = COALESCE($2, surface_m2),
             budget = COALESCE($3, budget),
-            id_entreprise = COALESCE($4, id_entreprise),
+            id_entreprise = $4,
             id_statut = COALESCE($5, id_statut)
         WHERE id_signalement = $6
         RETURNING *
       `;
-      params = [description, surface_m2, budget, id_entreprise, id_statut, req.params.id];
+      params = [cleanDescription, cleanSurface, cleanBudget, cleanEntreprise, cleanStatut, req.params.id];
     }
     
     const result = await db.query(query, params);

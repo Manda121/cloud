@@ -17,6 +17,20 @@ api.interceptors.request.use((reqConfig) => {
   return reqConfig;
 });
 
+// Intercepteur pour gérer les erreurs d'authentification
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Si le token est expiré ou invalide, déconnecter l'utilisateur
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      // Ne pas rediriger ici, laisser le contexte gérer
+    }
+    return Promise.reject(error);
+  }
+);
+
 const authService = {
   // Inscription
   register: async (email, password, firstname, lastname) => {
@@ -89,6 +103,24 @@ const authService = {
   // Obtenir le token
   getToken: () => {
     return localStorage.getItem('token');
+  },
+
+  // Valider le token auprès du serveur
+  validateToken: async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      return { valid: false };
+    }
+    
+    try {
+      const response = await api.get('/validate');
+      return { valid: true, user: response.data.user };
+    } catch (error) {
+      // Token invalide ou expiré
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      return { valid: false };
+    }
   }
 };
 
