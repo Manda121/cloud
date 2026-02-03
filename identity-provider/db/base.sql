@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS historique_statuts (
     id_manager INTEGER REFERENCES users(id)
 );
 
-CREATE OR REPLACE VIEW v_stats_globales AS
+CREATE OR REPLACE VIEW v_stats_globales AS(
     id_manager UUID REFERENCES users(id_user)
 );
 
@@ -117,3 +117,31 @@ INSERT INTO users (email, password, firstname, lastname) VALUES
 ('test@gmail.com', 'test123', 'Mandaniaina', 'Notiavina')
 ON CONFLICT (email) DO NOTHING;
 
+
+
+BEGIN;
+
+-- 1) Mettre à jour les statuts
+UPDATE signalements
+SET id_statut = 2  -- 2 = EN_COURS
+WHERE id_signalement = '5b2c7f23-af6c-412a-94e8-bf81fff25a72';
+
+UPDATE signalements
+SET id_statut = 3  -- 3 = TERMINE
+WHERE id_signalement = 'b130307d-75b9-41d6-a272-0c5ba10b9ae3';
+
+-- 2) Enregistrer l'historique (id_manager optionnel -> mettre NULL ou ton id)
+INSERT INTO historique_statuts (id_signalement, id_statut, id_manager)
+VALUES
+('5b2c7f23-af6c-412a-94e8-bf81fff25a72', 2, NULL),
+('b130307d-75b9-41d6-a272-0c5ba10b9ae3', 3, NULL);
+
+-- 3) (Optionnel) marquer comme non synchronisé pour forcer sync si tu utilises un mécanisme de sync
+UPDATE signalements
+SET synced = FALSE
+WHERE id_signalement IN (
+  '5b2c7f23-af6c-412a-94e8-bf81fff25a72',
+  'b130307d-75b9-41d6-a272-0c5ba10b9ae3'
+);
+
+COMMIT;
