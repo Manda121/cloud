@@ -1,9 +1,12 @@
 /**
  * Service d'authentification
- * Appelle l'API identity-provider et stocke le token
+ * Connexion directe via Firebase Auth
  */
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
+// @ts-ignore - Firebase types
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getFirebaseAuth } from '../config/firebase';
+
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 
@@ -34,71 +37,117 @@ export interface RegisterResponse {
 }
 
 /**
- * Connexion via l'API
+ * Connexion directe via Firebase Auth
  */
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Erreur de connexion' }));
-    throw new Error(error.error || `Erreur ${response.status}`);
+  try {
+    const auth = getFirebaseAuth();
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    
+    // Récupérer le token Firebase
+    const idToken = await user.getIdToken();
+    
+    // Stocker le token
+    localStorage.setItem(TOKEN_KEY, idToken);
+    
+    // Stocker les infos utilisateur
+    const authUser: AuthUser = {
+      uid: user.uid,
+      email: user.email || email,
+      firebase_uid: user.uid,
+    };
+    localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+    
+    return {
+      token: idToken,
+      uid: user.uid,
+      email: user.email || email,
+      authMode: 'firebase',
+      message: 'Connexion Firebase réussie',
+    };
+  } catch (error: any) {
+    // Traduire les erreurs Firebase en français
+    const errorCode = error?.code || '';
+    let message = error?.message || 'Erreur de connexion';
+    
+    if (errorCode === 'auth/user-not-found') {
+      message = 'Utilisateur non trouvé';
+    } else if (errorCode === 'auth/wrong-password') {
+      message = 'Mot de passe incorrect';
+    } else if (errorCode === 'auth/invalid-email') {
+      message = 'Adresse email invalide';
+    } else if (errorCode === 'auth/invalid-credential') {
+      message = 'Email ou mot de passe incorrect';
+    } else if (errorCode === 'auth/too-many-requests') {
+      message = 'Trop de tentatives. Réessayez plus tard.';
+    }
+    
+    throw new Error(message);
   }
-
-  const data: LoginResponse = await response.json();
-
-  // Stocker le token
-  if (data.token) {
-    localStorage.setItem(TOKEN_KEY, data.token);
-  }
-
-  // Stocker les infos utilisateur
-  const user: AuthUser = data.user || {
-    uid: data.uid,
-    email: data.email || email,
-  };
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-
-  return data;
 }
 
 /**
- * Inscription via l'API
+ * Inscription directe via Firebase Auth
  */
 export async function register(
   email: string,
   password: string,
-  firstname?: string,
-  lastname?: string
+  _firstname?: string,
+  _lastname?: string
 ): Promise<RegisterResponse> {
-  const response = await fetch(`${API_BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, firstname, lastname }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Erreur d\'inscription' }));
-    throw new Error(error.error || `Erreur ${response.status}`);
+  try {
+    const auth = getFirebaseAuth();
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    
+    // Récupérer le token Firebase
+    const idToken = await user.getIdToken();
+    
+    // Stocker le token
+    localStorage.setItem(TOKEN_KEY, idToken);
+    
+    // Stocker les infos utilisateur
+    const authUser: AuthUser = {
+      uid: user.uid,
+      email: user.email || email,
+      firebase_uid: user.uid,
+    };
+    localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+    
+    return {
+      idToken,
+      localId: user.uid,
+      email: user.email || email,
+      authMode: 'firebase',
+      message: 'Inscription Firebase réussie',
+    };
+  } catch (error: any) {
+    const errorCode = error?.code || '';
+    let message = error?.message || 'Erreur d\'inscription';
+    
+    if (errorCode === 'auth/email-already-in-use') {
+      message = 'Cette adresse email est déjà utilisée';
+    } else if (errorCode === 'auth/weak-password') {
+      message = 'Le mot de passe doit contenir au moins 6 caractères';
+    } else if (errorCode === 'auth/invalid-email') {
+      message = 'Adresse email invalide';
+    }
+    
+    throw new Error(message);
   }
-
-  const data: RegisterResponse = await response.json();
-
-  // Si on reçoit un idToken (Firebase), le stocker
-  if (data.idToken) {
-    localStorage.setItem(TOKEN_KEY, data.idToken);
-  }
-
-  return data;
 }
 
 /**
- * Déconnexion
+ * Déconnexion (Firebase + localStorage)
  */
-export function logout(): void {
+export async function logout(): Promise<void> {
+  try {
+    const auth = getFirebaseAuth();
+    await signOut(auth);
+  } catch (e) {
+    // Ignorer les erreurs de signOut
+  }
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 }
@@ -130,33 +179,26 @@ export function isAuthenticated(): boolean {
 }
 
 /**
- * Vérifie le statut de l'API (mode auth actuel)
+ * Vérifie le statut de l'auth (toujours Firebase en mode direct)
  */
 export async function getAuthStatus(): Promise<{ authMode: string; online: boolean }> {
-  const response = await fetch(`${API_BASE}/api/auth/status`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Erreur ${response.status}`);
-  }
-
-  return response.json();
+  return { authMode: 'firebase', online: true };
 }
 
 /**
- * Force le rafraîchissement de la connectivité Firebase
+ * Rafraîchir le token Firebase si nécessaire
  */
-export async function refreshConnectivity(): Promise<{ authMode: string; online: boolean }> {
-  const response = await fetch(`${API_BASE}/api/auth/refresh-connectivity`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Erreur ${response.status}`);
+export async function refreshToken(): Promise<string | null> {
+  try {
+    const auth = getFirebaseAuth();
+    const user = auth.currentUser;
+    if (user) {
+      const newToken = await user.getIdToken(true);
+      localStorage.setItem(TOKEN_KEY, newToken);
+      return newToken;
+    }
+    return null;
+  } catch (e) {
+    return null;
   }
-
-  return response.json();
 }

@@ -47,3 +47,6 @@ npx cap sync android
 # Ouvrir Android Studio
 npx cap open android
 
+
+#installer firebase
+npm install firebase

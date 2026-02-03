@@ -1,0 +1,1 @@
+http://localhost:3000/api-docs/#/default/get_api_auth_status

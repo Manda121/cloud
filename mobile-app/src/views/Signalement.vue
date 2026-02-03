@@ -486,6 +486,8 @@ function goBack() {
   --border-radius: 12px;
   --padding-start: 16px;
   --padding-end: 16px;
+  --color: #000000;
+  color: #000000;
   border: 2px solid #e2e8f0;
   border-radius: 12px;
 }

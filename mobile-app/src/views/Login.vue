@@ -218,7 +218,7 @@ function goToRegister() {
   margin-bottom: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #4a5568;
+  color: #000000;
 }
 
 .form-label ion-icon {
@@ -236,6 +236,8 @@ function goToRegister() {
   --background: #f7fafc;
   --padding-start: 16px;
   --padding-end: 50px;
+  --color: #000000;
+  color: #000000;
   border: 2px solid #e2e8f0;
   border-radius: 12px;
   height: 50px;
