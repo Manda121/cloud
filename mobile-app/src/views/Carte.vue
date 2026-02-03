@@ -115,6 +115,10 @@
     // Charger les stats
     loadStats();
 
+    // Essayer de centrer sur la position de l'utilisateur au démarrage
+    // (demande de permission si nécessaire)
+    centerOnUser();
+
     // Écouter les nouveaux signalements créés
     const onCreated = (ev: any) => {
       const s = ev?.detail;
