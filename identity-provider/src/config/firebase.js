@@ -19,10 +19,32 @@ function initFirebase() {
         privateKey,
       }),
     });
+    console.log('[Firebase] initialized using explicit env vars');
   } else {
-    // If no service account provided, initialize default app (may work in GCP)
+    // Try loading a service account JSON pointed by GOOGLE_APPLICATION_CREDENTIALS
+    const gaCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (gaCredPath) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(gaCredPath)) {
+          const sa = JSON.parse(fs.readFileSync(gaCredPath, 'utf8'));
+          admin.initializeApp({
+            credential: admin.credential.cert(sa),
+          });
+          console.log('[Firebase] initialized using service account JSON', gaCredPath);
+          return admin;
+        } else {
+          console.warn('[Firebase] GOOGLE_APPLICATION_CREDENTIALS set but file not found:', gaCredPath);
+        }
+      } catch (err) {
+        console.warn('[Firebase] Failed to load service account JSON from', gaCredPath, err.message);
+      }
+    }
+
+    // Fallback to application default credentials (this may produce a warning if project id not found)
     try {
       admin.initializeApp();
+      console.log('[Firebase] initialized using application default credentials');
     } catch (e) {
       // ignore
     }
