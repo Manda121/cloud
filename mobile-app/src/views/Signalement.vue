@@ -136,6 +136,43 @@
               ></ion-datetime>
             </div>
 
+            <!-- Section Photo -->
+            <div class="form-group">
+              <label class="form-label">
+                <ion-icon :icon="cameraOutline"></ion-icon>
+                Photo de la dégradation
+              </label>
+              <div class="photo-section">
+                <!-- Aperçu des photos ajoutées -->
+                <div class="photo-previews" v-if="photos.length > 0">
+                  <div class="photo-thumb" v-for="(photo, index) in photos" :key="index">
+                    <img :src="photo.localDataUri" :alt="'Photo ' + (index + 1)" />
+                    <ion-button fill="clear" size="small" class="remove-photo" @click="removePhoto(index)">
+                      <ion-icon :icon="closeCircleOutline"></ion-icon>
+                    </ion-button>
+                  </div>
+                </div>
+                <!-- Bouton ajouter photo -->
+                <div class="photo-add">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    ref="fileInput"
+                    @change="onPhotoSelected"
+                    class="file-input-hidden"
+                  />
+                  <ion-button fill="outline" @click="($refs.fileInput as HTMLInputElement)?.click()" type="button">
+                    <ion-icon :icon="cameraOutline" slot="start"></ion-icon>
+                    {{ photos.length > 0 ? 'Ajouter une photo' : 'Prendre une photo' }}
+                  </ion-button>
+                </div>
+                <p class="photo-hint" v-if="photos.length > 0">
+                  {{ photos.length }} photo(s) — seront uploadées lors de la synchronisation
+                </p>
+              </div>
+            </div>
+
             <div v-if="errorMsg" class="alert alert-error">
               <ion-icon :icon="alertCircleOutline"></ion-icon>
               {{ errorMsg }}
@@ -154,6 +191,17 @@
                   Enregistrer le signalement
                 </template>
               </ion-button>
+              <!-- Bouton Synchronisation -->
+              <ion-button expand="block" color="success" @click="onSync" :disabled="syncing" type="button" class="sync-btn">
+                <ion-spinner v-if="syncing" name="crescent"></ion-spinner>
+                <template v-else>
+                  <ion-icon :icon="syncOutline" slot="start"></ion-icon>
+                  Synchroniser avec Firebase
+                </template>
+              </ion-button>
+              <p v-if="syncMessage" class="sync-status" :class="{ 'sync-error': syncError }">
+                {{ syncMessage }}
+              </p>
               <ion-button expand="block" fill="outline" color="medium" @click="goBack" type="button">
                 Annuler
               </ion-button>
@@ -175,10 +223,13 @@ import {
 import { 
   eyeOutline, addCircleOutline, locationOutline, calendarOutline, 
   resizeOutline, cashOutline, arrowBackOutline, documentTextOutline,
-  alertCircleOutline, checkmarkCircleOutline, sendOutline
+  alertCircleOutline, checkmarkCircleOutline, sendOutline, cameraOutline,
+  closeCircleOutline, syncOutline
 } from 'ionicons/icons';
 import { createSignalement, getSignalementById, getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from '../services/signalement';
 import { getAuthToken } from '../services/auth';
+import { prepareAndSavePhoto, PhotoData } from '../services/photo';
+import { fullSync, FullSyncResult } from '../services/sync';
 
 const route = useRoute();
 const router = useRouter();
@@ -195,6 +246,11 @@ const viewing = ref(false);
 const remoteData = ref<any | null>(null);
 const errorMsg = ref<string | null>(null);
 const loading = ref(false);
+const photos = ref<PhotoData[]>([]);
+const syncing = ref(false);
+const syncMessage = ref<string | null>(null);
+const syncError = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
 
 onMounted(async () => {
   const id = (route.query.id as string) || null;
@@ -319,6 +375,55 @@ async function onSubmit() {
     setTimeout(() => router.push({ name: 'Carte' }), 900);
   } finally {
     loading.value = false;
+  }
+}
+
+// ============ Photo handlers ============
+
+async function onPhotoSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  try {
+    // Utilise un ID temporaire si le signalement n'est pas encore créé
+    const tempId = (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now());
+    const photo = await prepareAndSavePhoto(file, tempId);
+    photos.value.push(photo);
+  } catch (err: any) {
+    console.error('Erreur ajout photo:', err);
+    errorMsg.value = 'Erreur lors de l\'ajout de la photo';
+  }
+
+  // Reset input pour pouvoir re-sélectionner le même fichier
+  if (input) input.value = '';
+}
+
+function removePhoto(index: number) {
+  photos.value.splice(index, 1);
+}
+
+// ============ Sync handler ============
+
+async function onSync() {
+  syncing.value = true;
+  syncMessage.value = null;
+  syncError.value = false;
+
+  try {
+    const result: FullSyncResult = await fullSync(true);
+
+    if (result.success) {
+      syncMessage.value = `✅ Sync terminée ! ${result.photosUploaded} photo(s), ${result.signalementsPushed} signalement(s) envoyé(s), ${result.signalementsPulled} reçu(s) (${result.duration}ms)`;
+    } else {
+      syncError.value = true;
+      syncMessage.value = `⚠️ Sync partielle : ${result.errors.join(', ')}`;
+    }
+  } catch (err: any) {
+    syncError.value = true;
+    syncMessage.value = `❌ Erreur de synchronisation : ${err.message}`;
+  } finally {
+    syncing.value = false;
   }
 }
 
@@ -542,5 +647,73 @@ function goBack() {
 
 .submit-btn {
   --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Photo Section */
+.photo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.photo-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.photo-thumb {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid #e2e8f0;
+}
+
+.photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-photo {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  --padding-start: 0;
+  --padding-end: 0;
+  color: #e53e3e;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.photo-hint {
+  font-size: 12px;
+  color: #718096;
+  margin: 0;
+}
+
+/* Sync Button */
+.sync-btn {
+  --border-radius: 12px;
+  font-weight: 600;
+}
+
+.sync-status {
+  text-align: center;
+  font-size: 13px;
+  color: #2f855a;
+  padding: 8px;
+  margin: 0;
+  border-radius: 8px;
+  background: #f0fff4;
+}
+
+.sync-status.sync-error {
+  color: #c53030;
+  background: #fed7d7;
 }
 </style>

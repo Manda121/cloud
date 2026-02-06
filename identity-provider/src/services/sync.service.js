@@ -1,6 +1,6 @@
 /**
  * Service de synchronisation entre PostgreSQL local et Firebase Firestore
- * Gère la synchronisation bidirectionnelle des signalements
+ * Gère la synchronisation bidirectionnelle des signalements + photos
  */
 
 const db = require('../config/database');
@@ -23,6 +23,13 @@ function getSignalementsCollection() {
 function getSyncLogsCollection() {
   const firestore = admin.firestore();
   return firestore.collection('sync_logs');
+}
+
+/**
+ * Référence au bucket Firebase Storage
+ */
+function getStorageBucket() {
+  return admin.storage().bucket();
 }
 
 // ============================================
@@ -111,6 +118,7 @@ async function pushToFirebase(signalement) {
       date_signalement: signalement.date_signalement,
       latitude: signalement.latitude || null,
       longitude: signalement.longitude || null,
+      photos: signalement.photos || [],
       source: signalement.source || 'LOCAL',
       created_at: signalement.created_at,
       updated_at: new Date().toISOString(),
@@ -619,6 +627,47 @@ function shouldUpdate(localSig, firebaseSig) {
   return false;
 }
 
+/**
+ * Génère un signed URL temporaire pour accéder à un fichier dans Firebase Storage
+ * @param {string} storagePath - Chemin du fichier dans le bucket
+ * @returns {Promise<string>} URL temporaire valide 1h
+ */
+async function getSignedPhotoUrl(storagePath) {
+  try {
+    const bucket = getStorageBucket();
+    const file = bucket.file(storagePath);
+    const [url] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 3600 * 1000, // 1 heure
+    });
+    return url;
+  } catch (error) {
+    console.error('[Sync] getSignedPhotoUrl error:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Génère un custom token Firebase pour un utilisateur local
+ * Permet au client mobile/web de s'authentifier sur Firebase avec un token local
+ * @param {string} uid - UID Firebase de l'utilisateur (ou ID local)
+ * @param {object} claims - Claims additionnels (rôle, etc.)
+ * @returns {Promise<string>} Custom token Firebase
+ */
+async function generateCustomToken(uid, claims = {}) {
+  try {
+    const customToken = await admin.auth().createCustomToken(uid, claims);
+    await logSyncEvent('CUSTOM_TOKEN_GENERATED', 'SUCCESS', { uid });
+    return customToken;
+  } catch (error) {
+    await logSyncEvent('CUSTOM_TOKEN_GENERATED', 'ERROR', {
+      uid,
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   // Récupération Firebase
   fetchFromFirebase,
@@ -643,4 +692,8 @@ module.exports = {
   getSyncHistory,
   getSyncErrors,
   getSyncStats,
+  
+  // Custom tokens & photos
+  generateCustomToken,
+  getSignedPhotoUrl,
 };

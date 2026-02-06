@@ -92,11 +92,12 @@ exports.getOne = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log('[Signalements] update request:', { id, body: req.body });
     const updated = await service.updateSignalement(id, req.body || {});
     if (!updated) return res.status(404).json({ error: 'Signalement introuvable' });
     res.json(updated);
   } catch (e) {
-    console.error('[Signalements] update error:', e.message);
+    console.error('[Signalements] update error:', e.message, e.stack);
     res.status(400).json({ error: e.message });
   }
 };

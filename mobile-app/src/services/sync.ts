@@ -1,9 +1,17 @@
 /**
  * Service de synchronisation pour l'application mobile
- * Gère la synchronisation bidirectionnelle avec le backend
+ * Gère la synchronisation bidirectionnelle avec le backend ET Firebase directement
  */
 
-import { getAuthToken } from './auth';
+import { getAuthToken, getCurrentUser } from './auth';
+import { getFirebaseDb } from '../config/firebase';
+// @ts-ignore - Firebase types
+import {
+  collection, doc, setDoc, getDocs, query, where, onSnapshot,
+  serverTimestamp, Timestamp, Unsubscribe
+} from 'firebase/firestore';
+import { syncAllPhotos, getPhotosForSignalement } from './photo';
+import { getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from './signalement';
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -338,4 +346,248 @@ export function stopAutoSync(): void {
  */
 export function isAutoSyncRunning(): boolean {
   return autoSyncInterval !== null;
+}
+
+// ============================================
+// SYNCHRONISATION DIRECTE FIREBASE (FIRESTORE)
+// ============================================
+
+/**
+ * Pousse les signalements locaux non-synchronisés vers Firestore directement
+ * (sans passer par le backend — utile en mode offline pur)
+ */
+export async function pushLocalToFirestore(): Promise<{
+  pushed: string[];
+  failed: Array<{ id: string; error: string }>;
+}> {
+  const db = getFirebaseDb();
+  const user = getCurrentUser();
+  const uid = user?.uid || user?.firebase_uid || 'anonymous';
+  const localSignalements = getLocalSignalements();
+  const unsynced = localSignalements.filter((s: any) => !s.synced);
+
+  const results = { pushed: [] as string[], failed: [] as Array<{ id: string; error: string }> };
+
+  for (const sig of unsynced) {
+    try {
+      // Récupérer les photos associées
+      const photos = getPhotosForSignalement(sig.id_signalement);
+      const photoUrls = photos
+        .filter((p) => p.firebaseUrl)
+        .map((p) => p.firebaseUrl);
+
+      const docRef = doc(collection(db, 'signalements'), sig.id_signalement);
+      await setDoc(docRef, {
+        id_signalement: sig.id_signalement,
+        description: sig.description || '',
+        surface_m2: sig.surface_m2 || null,
+        budget: sig.budget || null,
+        date_signalement: sig.date_signalement || null,
+        latitude: sig.latitude ?? sig.geom?.coordinates?.[1] ?? null,
+        longitude: sig.longitude ?? sig.geom?.coordinates?.[0] ?? null,
+        source: sig.source || 'LOCAL',
+        photos: photoUrls,
+        owner_uid: uid,
+        synced_from_mobile: true,
+        created_at: sig.created_at || new Date().toISOString(),
+        updated_at: serverTimestamp(),
+      }, { merge: true });
+
+      // Marquer comme synchronisé localement
+      updateLocalSignalement(sig.id_signalement, { synced: true });
+      results.pushed.push(sig.id_signalement);
+    } catch (error: any) {
+      console.error(`[Sync] Firestore push failed for ${sig.id_signalement}:`, error);
+      results.failed.push({ id: sig.id_signalement, error: error.message });
+    }
+  }
+
+  console.log(`[Sync] Firestore push: ${results.pushed.length} OK, ${results.failed.length} failed`);
+  return results;
+}
+
+/**
+ * Tire les signalements depuis Firestore vers le stockage local
+ */
+export async function pullFromFirestore(): Promise<{
+  received: string[];
+  errors: string[];
+}> {
+  const db = getFirebaseDb();
+  const results = { received: [] as string[], errors: [] as string[] };
+
+  try {
+    const snap = await getDocs(collection(db, 'signalements'));
+
+    snap.forEach((docSnap) => {
+      try {
+        const data = docSnap.data();
+        const localSignalements = getLocalSignalements();
+        const exists = localSignalements.find((s: any) => s.id_signalement === docSnap.id);
+
+        if (!exists) {
+          // Nouveau signalement provenant d'un autre appareil
+          saveLocalSignalement({
+            id_signalement: docSnap.id,
+            description: data.description,
+            surface_m2: data.surface_m2,
+            budget: data.budget,
+            date_signalement: data.date_signalement,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            geom: data.latitude && data.longitude
+              ? { type: 'Point', coordinates: [data.longitude, data.latitude] }
+              : null,
+            source: 'FIREBASE',
+            synced: true,
+            photos: data.photos || [],
+            created_at: data.created_at || new Date().toISOString(),
+          });
+          results.received.push(docSnap.id);
+        }
+      } catch (e: any) {
+        results.errors.push(docSnap.id);
+      }
+    });
+  } catch (error: any) {
+    console.error('[Sync] Firestore pull failed:', error);
+    throw error;
+  }
+
+  console.log(`[Sync] Firestore pull: ${results.received.length} received`);
+  return results;
+}
+
+// ============================================
+// ÉCOUTE TEMPS RÉEL (onSnapshot)
+// ============================================
+
+let realtimeUnsubscribe: Unsubscribe | null = null;
+
+/**
+ * Active l'écoute temps réel des signalements Firestore
+ * Appelle le callback à chaque changement
+ */
+export function startRealtimeSync(
+  onUpdate: (changes: Array<{ type: string; id: string; data: any }>) => void
+): void {
+  if (realtimeUnsubscribe) {
+    realtimeUnsubscribe();
+  }
+
+  const db = getFirebaseDb();
+  const colRef = collection(db, 'signalements');
+
+  realtimeUnsubscribe = onSnapshot(colRef, (snapshot) => {
+    const changes: Array<{ type: string; id: string; data: any }> = [];
+
+    snapshot.docChanges().forEach((change) => {
+      changes.push({
+        type: change.type, // 'added' | 'modified' | 'removed'
+        id: change.doc.id,
+        data: change.doc.data(),
+      });
+    });
+
+    if (changes.length > 0) {
+      console.log(`[Sync] Realtime: ${changes.length} changements reçus`);
+      onUpdate(changes);
+    }
+  }, (error) => {
+    console.error('[Sync] Realtime listener error:', error);
+  });
+
+  console.log('[Sync] Realtime sync started');
+}
+
+/**
+ * Arrête l'écoute temps réel
+ */
+export function stopRealtimeSync(): void {
+  if (realtimeUnsubscribe) {
+    realtimeUnsubscribe();
+    realtimeUnsubscribe = null;
+    console.log('[Sync] Realtime sync stopped');
+  }
+}
+
+// ============================================
+// BOUTON SYNCHRONISATION COMPLET
+// ============================================
+
+export interface FullSyncResult {
+  success: boolean;
+  photosUploaded: number;
+  photosFailed: number;
+  signalementsPushed: number;
+  signalementsPulled: number;
+  errors: string[];
+  duration: number;
+}
+
+/**
+ * Synchronisation complète déclenchée par le bouton "Synchroniser"
+ * 1. Upload les photos non synchronisées vers Firebase Storage
+ * 2. Pousse les signalements locaux vers Firestore
+ * 3. Tire les signalements Firestore vers le local
+ * 4. (optionnel) Sync via le backend API aussi
+ */
+export async function fullSync(useBackendToo: boolean = true): Promise<FullSyncResult> {
+  const startTime = Date.now();
+  const result: FullSyncResult = {
+    success: true,
+    photosUploaded: 0,
+    photosFailed: 0,
+    signalementsPushed: 0,
+    signalementsPulled: 0,
+    errors: [],
+    duration: 0,
+  };
+
+  try {
+    // Étape 1 : Upload photos vers Firebase Storage
+    console.log('[Sync] Étape 1/3 : Upload des photos...');
+    const photoResult = await syncAllPhotos();
+    result.photosUploaded = photoResult.uploaded.length;
+    result.photosFailed = photoResult.failed.length;
+    if (photoResult.failed.length > 0) {
+      result.errors.push(`${photoResult.failed.length} photo(s) non uploadée(s)`);
+    }
+
+    // Étape 2 : Push signalements locaux → Firestore
+    console.log('[Sync] Étape 2/3 : Push signalements vers Firestore...');
+    const pushResult = await pushLocalToFirestore();
+    result.signalementsPushed = pushResult.pushed.length;
+    if (pushResult.failed.length > 0) {
+      result.errors.push(...pushResult.failed.map((f) => `Push échec: ${f.id}`));
+    }
+
+    // Étape 3 : Pull signalements Firestore → Local
+    console.log('[Sync] Étape 3/3 : Pull signalements depuis Firestore...');
+    const pullResult = await pullFromFirestore();
+    result.signalementsPulled = pullResult.received.length;
+
+    // Optionnel : sync avec le backend API aussi (PostgreSQL)
+    if (useBackendToo && navigator.onLine) {
+      try {
+        await triggerSync('both');
+      } catch (e: any) {
+        console.warn('[Sync] Backend sync skipped:', e.message);
+        // Pas critique — la sync Firestore a fonctionné
+      }
+    }
+
+    // Mettre à jour le timestamp de dernière sync
+    setLastSyncTime();
+
+    result.success = result.errors.length === 0;
+  } catch (error: any) {
+    result.success = false;
+    result.errors.push(error.message);
+    console.error('[Sync] Full sync failed:', error);
+  }
+
+  result.duration = Date.now() - startTime;
+  console.log(`[Sync] Full sync completed in ${result.duration}ms`, result);
+  return result;
 }

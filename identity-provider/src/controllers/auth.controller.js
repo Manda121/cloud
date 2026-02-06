@@ -181,3 +181,60 @@ exports.refreshConnectivity = async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 };
+
+/**
+ * Générer un custom token Firebase pour le client mobile/web
+ * POST /api/auth/custom-token
+ * Le client doit être authentifié (token local ou Firebase)
+ * Le custom token retourné permet au client de s'authentifier sur Firebase avec :
+ *   firebase.auth().signInWithCustomToken(customToken)
+ */
+exports.getCustomToken = async (req, res) => {
+  try {
+    const syncService = require('../services/sync.service');
+
+    // L'utilisateur doit être authentifié (middleware auth)
+    if (!req.user) {
+      return res.status(401).json({ error: 'Non authentifié' });
+    }
+
+    // Déterminer l'UID Firebase à utiliser
+    let uid = req.user.uid; // Firebase UID si auth Firebase
+    
+    if (!uid && req.user.id) {
+      // Auth locale : utiliser l'email comme UID ou créer un UID déterministe
+      const localUser = await localAuth.findById(req.user.id);
+      if (localUser && localUser.firebase_uid) {
+        uid = localUser.firebase_uid;
+      } else {
+        // Créer un UID déterministe à partir de l'email
+        uid = `local_${req.user.id}_${(localUser?.email || '').replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+    }
+
+    if (!uid) {
+      return res.status(400).json({ error: 'Impossible de déterminer l\'UID utilisateur' });
+    }
+
+    // Claims additionnels
+    const claims = {
+      localUserId: req.user.id || null,
+      email: req.user.email || null,
+      provider: req.userProvider || 'unknown',
+    };
+
+    const customToken = await syncService.generateCustomToken(uid, claims);
+
+    console.log(`[Auth] Custom token generated for UID: ${uid}`);
+
+    res.json({
+      success: true,
+      customToken,
+      uid,
+      message: 'Utilisez firebase.auth().signInWithCustomToken(customToken) côté client',
+    });
+  } catch (e) {
+    console.error('[Auth] Custom token error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+};

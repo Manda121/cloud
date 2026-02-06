@@ -143,4 +143,39 @@ router.get('/status', ctrl.status);
  */
 router.post('/refresh-connectivity', ctrl.refreshConnectivity);
 
+/**
+ * @swagger
+ * /api/auth/custom-token:
+ *   post:
+ *     summary: Générer un custom token Firebase pour le client
+ *     description: >
+ *       Génère un custom token Firebase que le client mobile/web peut utiliser
+ *       pour s'authentifier sur Firebase via signInWithCustomToken().
+ *       Nécessite d'être déjà authentifié (token local ou Firebase).
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Custom token généré
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 customToken:
+ *                   type: string
+ *                   description: Token à utiliser avec signInWithCustomToken()
+ *                 uid:
+ *                   type: string
+ *                   description: UID Firebase associé
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: Non authentifié
+ */
+const auth = require('../middlewares/auth.middleware');
+router.post('/custom-token', auth, ctrl.getCustomToken);
+
 module.exports = router;
