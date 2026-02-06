@@ -82,8 +82,14 @@ exports.login = async (req, res) => {
       // Mode ONLINE avec Firebase
       if (idToken) {
         const decoded = await firebaseAuth.verifyIdToken(idToken);
+        // Generate a custom token for client-side Firebase signIn
+        const syncService = require('../services/sync.service');
+        const claims = { localUserId: decoded.uid, provider: 'firebase' };
+        const customToken = await syncService.generateCustomToken(decoded.uid, claims);
+
         return res.json({ 
           token: idToken, 
+          customToken,
           uid: decoded.uid, 
           email: decoded.email,
           authMode: 'firebase'
@@ -102,9 +108,15 @@ exports.login = async (req, res) => {
           firstname: decoded.name?.split(' ')[0] || '',
           lastname: decoded.name?.split(' ').slice(1).join(' ') || '',
         });
+
+        // Generate a custom token to allow client to sign in to Firebase SDK
+        const syncService = require('../services/sync.service');
+        const claims = { localUserId: null, provider: 'firebase' };
+        const customToken = await syncService.generateCustomToken(decoded.uid, claims);
         
         return res.json({ 
           token: data.idToken, 
+          customToken,
           uid: decoded.uid, 
           email: decoded.email,
           authMode: 'firebase'
@@ -122,8 +134,22 @@ exports.login = async (req, res) => {
     }
     
     const result = await localAuth.login(email, password);
+
+    // Generate a Firebase custom token so the client can sign in to Firebase SDK
+    const syncService = require('../services/sync.service');
+    // Determine UID to use for Firebase custom token
+    let uid = result.user.firebase_uid;
+    if (!uid) {
+      // deterministic UID if none exists
+      uid = `local_${result.user.id}_${(result.user.email || '').replace(/[^a-zA-Z0-9]/g, '_')}`;
+    }
+
+    const claims = { localUserId: result.user.id, email: result.user.email, provider: 'local' };
+    const customToken = await syncService.generateCustomToken(uid, claims);
+
     return res.json({ 
       ...result,
+      customToken,
       authMode: 'local',
       message: 'Connexion en mode hors ligne'
     });

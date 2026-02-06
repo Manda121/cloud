@@ -93,8 +93,26 @@ exports.update = async (req, res) => {
   try {
     const { id } = req.params;
     console.log('[Signalements] update request:', { id, body: req.body });
+
+    // Récupérer l'ancien signalement pour détecter changement de statut
+    const oldSig = await service.getSignalementById(id);
+
     const updated = await service.updateSignalement(id, req.body || {});
     if (!updated) return res.status(404).json({ error: 'Signalement introuvable' });
+
+    // Si le statut a changé, notifier le propriétaire (manager = req.user.id si disponible)
+    try {
+      const newStatus = updated.id_statut;
+      const oldStatus = oldSig ? oldSig.id_statut : null;
+      if (req.body && typeof req.body.id_statut !== 'undefined' && oldStatus !== null && oldStatus !== newStatus) {
+        const notificationService = require('../services/notification.service');
+        await notificationService.notifyStatusChange(id, oldStatus, newStatus, req.user?.id || null);
+      }
+    } catch (notifErr) {
+      console.error('[Signalements] Notification after update failed:', notifErr.message);
+      // Ne pas empêcher la réponse principale
+    }
+
     res.json(updated);
   } catch (e) {
     console.error('[Signalements] update error:', e.message, e.stack);

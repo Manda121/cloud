@@ -132,6 +132,16 @@ async function onSubmit() {
   loading.value = true;
   try {
     await authLogin(email.value, password.value);
+
+    // Setup push notifications (request permission, get FCM token and register it)
+    try {
+      const { setupPushNotifications } = await import('../services/notifications');
+      const ok = await setupPushNotifications();
+      console.log('[Login] Push notifications setup:', ok);
+    } catch (notifErr) {
+      console.warn('[Login] Push setup failed:', notifErr?.message || notifErr);
+    }
+
     toast.value = { show: true, message: 'Connexion réussie !' };
     setTimeout(() => router.push('/carte'), 700);
   } catch (err: any) {

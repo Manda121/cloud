@@ -4,11 +4,12 @@
  */
 
 // @ts-ignore - Firebase types
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInWithCustomToken } from 'firebase/auth';
 import { getFirebaseAuth } from '../config/firebase';
 
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
+const FIREBASE_TOKEN_KEY = 'firebase_token';
 
 export interface AuthUser {
   id?: number;
@@ -23,6 +24,7 @@ export interface LoginResponse {
   uid?: string;
   email?: string;
   authMode: 'local' | 'firebase';
+  customToken?: string;
   message?: string;
 }
 
@@ -37,54 +39,53 @@ export interface RegisterResponse {
 }
 
 /**
- * Connexion directe via Firebase Auth
+ * Connexion via le backend (sécurisé) - retourne également un customToken Firebase
  */
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  try {
-    const auth = getFirebaseAuth();
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    
-    // Récupérer le token Firebase
-    const idToken = await user.getIdToken();
-    
-    // Stocker le token
-    localStorage.setItem(TOKEN_KEY, idToken);
-    
-    // Stocker les infos utilisateur
-    const authUser: AuthUser = {
-      uid: user.uid,
-      email: user.email || email,
-      firebase_uid: user.uid,
-    };
-    localStorage.setItem(USER_KEY, JSON.stringify(authUser));
-    
-    return {
-      token: idToken,
-      uid: user.uid,
-      email: user.email || email,
-      authMode: 'firebase',
-      message: 'Connexion Firebase réussie',
-    };
-  } catch (error: any) {
-    // Traduire les erreurs Firebase en français
-    const errorCode = error?.code || '';
-    let message = error?.message || 'Erreur de connexion';
-    
-    if (errorCode === 'auth/user-not-found') {
-      message = 'Utilisateur non trouvé';
-    } else if (errorCode === 'auth/wrong-password') {
-      message = 'Mot de passe incorrect';
-    } else if (errorCode === 'auth/invalid-email') {
-      message = 'Adresse email invalide';
-    } else if (errorCode === 'auth/invalid-credential') {
-      message = 'Email ou mot de passe incorrect';
-    } else if (errorCode === 'auth/too-many-requests') {
-      message = 'Trop de tentatives. Réessayez plus tard.';
-    }
-    
-    throw new Error(message);
+  const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
+
+  const response = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
+    throw new Error(err.error || `Erreur ${response.status}`);
   }
+
+  const data = await response.json();
+
+  // Stocker le token backend (JWT ou idToken selon mode)
+  if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
+
+  // Stocker les infos utilisateur
+  const authUser: AuthUser = { uid: data.uid, email: data.email, firebase_uid: data.uid };
+  localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+
+  // Si le backend a généré un customToken, se connecter au SDK Firebase coté client
+  if (data.customToken) {
+    try {
+      const auth = getFirebaseAuth();
+      await signInWithCustomToken(auth, data.customToken);
+      const currentUser = auth.currentUser;
+      const idToken = currentUser ? await currentUser.getIdToken() : null;
+      if (idToken) localStorage.setItem(FIREBASE_TOKEN_KEY, idToken);
+    } catch (e: any) {
+      console.warn('[Auth] Firebase signInWithCustomToken failed:', e.message || e);
+      // ne bloque pas la connexion backend - on renvoie quand même la réponse
+    }
+  }
+
+  return {
+    token: data.token,
+    uid: data.uid,
+    email: data.email,
+    authMode: data.authMode,
+    customToken: data.customToken,
+    message: data.message,
+  };
 }
 
 /**
