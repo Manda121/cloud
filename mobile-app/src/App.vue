@@ -41,6 +41,14 @@
               </ion-item>
             </ion-menu-toggle>
 
+            <ion-menu-toggle :auto-hide="false">
+              <ion-item router-link="/notifications" router-direction="root" class="menu-item">
+                <ion-icon :icon="notificationsOutline" slot="start"></ion-icon>
+                <ion-label>Notifications</ion-label>
+                <ion-badge color="danger" slot="end" v-if="unreadCount > 0">{{ unreadCount }}</ion-badge>
+              </ion-item>
+            </ion-menu-toggle>
+
             <ion-menu-toggle :auto-hide="false" v-if="!isLoggedIn">
               <ion-item router-link="/login" router-direction="root" class="menu-item">
                 <ion-icon :icon="logInOutline" slot="start"></ion-icon>
@@ -78,25 +86,29 @@ import {
   IonBadge, IonAvatar
 } from '@ionic/vue';
 import {
-  mapOutline, listOutline, logInOutline, logOutOutline, constructOutline
+  mapOutline, listOutline, notificationsOutline, logInOutline, logOutOutline, constructOutline
 } from 'ionicons/icons';
 import { isAuthenticated, getCurrentUser, logout, AuthUser } from './services/auth';
 import { getSignalements } from './services/signalement';
+import { getUnreadCount } from './services/notifications';
 
 const router = useRouter();
 const isLoggedIn = ref(false);
 const currentUser = ref<AuthUser | null>(null);
 const signalementCount = ref(0);
+const unreadCount = ref(0);
 
 onMounted(() => {
   checkAuth();
   loadSignalementCount();
+  loadNotificationCount();
 });
 
 // Watch for route changes to update auth state
 watch(() => router.currentRoute.value, () => {
   checkAuth();
   loadSignalementCount();
+  loadNotificationCount();
 });
 
 function checkAuth() {
@@ -111,6 +123,16 @@ async function loadSignalementCount() {
     signalementCount.value = list.length;
   } catch {
     signalementCount.value = 0;
+  }
+}
+
+async function loadNotificationCount() {
+  if (!isAuthenticated()) return;
+  try {
+    const count = await getUnreadCount();
+    unreadCount.value = count;
+  } catch {
+    unreadCount.value = 0;
   }
 }
 

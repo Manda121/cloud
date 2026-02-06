@@ -5,6 +5,7 @@ import LoginPage from '../views/Login.vue'
 import CartePage from '../views/Carte.vue'
 import SignalementPage from '../views/Signalement.vue'
 import SignalementsListPage from '../views/SignalementsList.vue'
+import NotificationsPage from '../views/Notifications.vue'
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -27,9 +28,19 @@ const routes: Array<RouteRecordRaw> = [
     component: SignalementPage
   },
   {
+    path: '/signalement/:id',
+    name: 'SignalementDetail',
+    component: SignalementPage
+  },
+  {
     path: '/signalements',
     name: 'SignalementsList',
     component: SignalementsListPage
+  },
+  {
+    path: '/notifications',
+    name: 'Notifications',
+    component: NotificationsPage
   },
   {
     path: '/home',

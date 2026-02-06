@@ -112,6 +112,79 @@ CREATE INDEX idx_signalements_user ON signalements(id_user);
 -- Index pour rechercher par firebase_uid
 CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
 
+-- ============================================
+-- TABLES DE SYNCHRONISATION
+-- ============================================
+
+-- Table des logs de synchronisation
+CREATE TABLE IF NOT EXISTS sync_logs (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('SUCCESS', 'ERROR', 'PARTIAL_ERROR', 'COMPLETED')),
+    details JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table des conflits de synchronisation
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id SERIAL PRIMARY KEY,
+    id_signalement UUID NOT NULL UNIQUE,
+    conflict_type VARCHAR(50) NOT NULL,
+    local_data JSONB,
+    firebase_data JSONB,
+    resolved BOOLEAN DEFAULT FALSE,
+    resolved_at TIMESTAMP,
+    resolution VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index pour les logs de sync
+CREATE INDEX IF NOT EXISTS idx_sync_logs_event ON sync_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_sync_logs_status ON sync_logs(status);
+CREATE INDEX IF NOT EXISTS idx_sync_logs_created ON sync_logs(created_at DESC);
+
+-- Index pour les conflits
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_resolved ON sync_conflicts(resolved);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_signalement ON sync_conflicts(id_signalement);
+
+-- ============================================
+-- TABLES DE NOTIFICATIONS
+-- ============================================
+
+-- Table des notifications pour les changements de statut
+CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    id_user INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    message TEXT,
+    data JSONB,
+    read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table pour tracker les tokens FCM des utilisateurs (Firebase Cloud Messaging)
+CREATE TABLE IF NOT EXISTS user_fcm_tokens (
+    id SERIAL PRIMARY KEY,
+    id_user INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    fcm_token TEXT NOT NULL,
+    device_type VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(id_user, fcm_token)
+);
+
+-- Index pour les notifications
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(id_user);
+CREATE INDEX IF NOT EXISTS idx_notifications_signalement ON notifications(id_signalement);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+
+-- Index pour les tokens FCM
+CREATE INDEX IF NOT EXISTS idx_fcm_tokens_user ON user_fcm_tokens(id_user);
+
 -- Utilisateur de test (mot de passe non hashé pour test uniquement)
 INSERT INTO users (email, password, firstname, lastname) VALUES
 ('test@gmail.com', 'test123', 'Mandaniaina', 'Notiavina')
