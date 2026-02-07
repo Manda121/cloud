@@ -59,6 +59,15 @@
             </div>
           </div>
 
+          <div class="photo-gallery" v-if="remoteData?.photos?.length">
+            <h3>Photos</h3>
+            <div class="photos-grid">
+              <div class="photo-thumb" v-for="(p, idx) in remoteData.photos" :key="idx">
+                <img :src="(typeof p === 'string') ? p : (API_BASE + p.url)" />
+              </div>
+            </div>
+          </div>
+
           <div class="action-buttons">
             <ion-button expand="block" @click="goBack">
               <ion-icon :icon="arrowBackOutline" slot="start"></ion-icon>
@@ -77,6 +86,33 @@
               <div>
                 <span class="location-label">Position sélectionnée</span>
                 <span class="location-coords">{{ lat.toFixed(6) }}, {{ lng.toFixed(6) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <ion-icon :icon="documentTextOutline"></ion-icon>
+              Photos (vous pouvez en ajouter plusieurs)
+            </label>
+            <div class="photo-actions">
+              <ion-button size="small" color="primary" @click="takePhoto">
+                <ion-icon :icon="cameraOutline" slot="start"></ion-icon>
+                Prendre une photo
+              </ion-button>
+              <ion-button size="small" fill="outline" @click="openGallery">
+                Ajouter depuis la galerie
+              </ion-button>
+            </div>
+
+            <!-- Hidden inputs: one for camera capture (single), one for gallery (multiple) -->
+            <input ref="cameraInput" type="file" accept="image/*" capture="environment" @change="onFilesSelected" style="display:none" />
+            <input ref="galleryInput" type="file" accept="image/*" multiple @change="onFilesSelected" style="display:none" />
+
+            <div class="photos-preview" v-if="selectedPreviews.length">
+              <div class="photo-thumb" v-for="(p, i) in selectedPreviews" :key="i">
+                <img :src="p" />
+                <button type="button" class="remove-photo" @click="removePreview(i)">✕</button>
               </div>
             </div>
           </div>
@@ -161,6 +197,13 @@
           </form>
         </div>
       </template>
+
+      <!-- Webcam capture modal (pour PC/navigateur) -->
+      <WebcamCapture 
+        :isOpen="showWebcam" 
+        @close="showWebcam = false" 
+        @captured="onWebcamCaptured" 
+      />
     </ion-content>
   </ion-page>
 </template>
@@ -175,10 +218,14 @@ import {
 import { 
   eyeOutline, addCircleOutline, locationOutline, calendarOutline, 
   resizeOutline, cashOutline, arrowBackOutline, documentTextOutline,
-  alertCircleOutline, checkmarkCircleOutline, sendOutline
+  alertCircleOutline, checkmarkCircleOutline, sendOutline, cameraOutline
 } from 'ionicons/icons';
 import { createSignalement, getSignalementById, getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from '../services/signalement';
+const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
 import { getAuthToken } from '../services/auth';
+import { takePhotoFromCamera, pickPhotoFromGallery } from '../composables/usePhotoGallery';
+import { Capacitor } from '@capacitor/core';
+import WebcamCapture from '../components/WebcamCapture.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -195,6 +242,11 @@ const viewing = ref(false);
 const remoteData = ref<any | null>(null);
 const errorMsg = ref<string | null>(null);
 const loading = ref(false);
+const selectedFiles = ref<File[]>([]);
+const selectedPreviews = ref<string[]>([]);
+const cameraInput = ref<HTMLInputElement | null>(null);
+const galleryInput = ref<HTMLInputElement | null>(null);
+const showWebcam = ref(false);
 
 onMounted(async () => {
   const id = (route.query.id as string) || null;
@@ -279,6 +331,7 @@ async function onSubmit() {
       type: 'Point',
       coordinates: [lng.value, lat.value]
     },
+      photos: selectedPreviews.value,
     source: 'LOCAL' as const,
     synced: false,
     created_at: new Date().toISOString()
@@ -292,6 +345,7 @@ async function onSubmit() {
       longitude: lng.value,
       surface_m2: surface_m2.value ?? undefined,
       budget: budget.value ?? undefined,
+      photos: selectedPreviews.value.length ? selectedPreviews.value : undefined,
       date_signalement: date_signalement.value,
     });
 
@@ -320,6 +374,76 @@ async function onSubmit() {
   } finally {
     loading.value = false;
   }
+}
+
+function onFilesSelected(ev: Event) {
+  const input = ev.target as HTMLInputElement;
+  if (!input.files) return;
+
+  Array.from(input.files).forEach((file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      if (result) {
+        selectedPreviews.value.push(result);
+        selectedFiles.value.push(file);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Reset input so same file can be selected again if needed
+  input.value = '';
+}
+
+function removePreview(idx: number) {
+  selectedPreviews.value.splice(idx, 1);
+  selectedFiles.value.splice(idx, 1);
+}
+
+async function takePhoto() {
+  // Sur plateforme native (Android/iOS), utiliser Capacitor Camera
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const photo = await takePhotoFromCamera();
+      if (photo) {
+        selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+        return;
+      }
+    } catch (e) {
+      console.warn('Native camera failed', e);
+    }
+    // Fallback natif
+    cameraInput.value?.click();
+    return;
+  }
+
+  // Sur le web (PC), ouvrir le modal webcam
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    showWebcam.value = true;
+  } else {
+    // Fallback si pas de webcam API
+    cameraInput.value?.click();
+  }
+}
+
+function onWebcamCaptured(dataUrl: string) {
+  selectedPreviews.value.push(dataUrl);
+}
+
+async function openGallery() {
+  try {
+    // Essayer d'utiliser le sélecteur natif (Capacitor)
+    const photo = await pickPhotoFromGallery();
+    if (photo) {
+      selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+      return;
+    }
+  } catch (e) {
+    console.warn('Native gallery not available, falling back to input', e);
+  }
+  // Fallback: utiliser l'input file standard
+  galleryInput.value?.click();
 }
 
 function goBack() {
@@ -501,6 +625,51 @@ function goBack() {
   border-radius: 12px;
   padding: 8px;
 }
+
+.photo-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.photos-preview {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.photo-thumb {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-photo {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.photo-gallery h3 { margin: 12px 0 8px; }
+.photos-grid { display:flex; gap:12px; flex-wrap:wrap; }
 
 .alert {
   display: flex;

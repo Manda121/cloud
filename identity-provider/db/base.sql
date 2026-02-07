@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS signalements (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table pour stocker les 
+s associées aux signalements
+CREATE TABLE IF NOT EXISTS signalement_photos (
+    id_photo SERIAL PRIMARY KEY,
+    id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    path TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 CREATE TABLE IF NOT EXISTS historique_statuts (
     id_historique SERIAL PRIMARY KEY,

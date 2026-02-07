@@ -15,6 +15,7 @@ export interface SignalementCreate {
   budget?: number;
   date_signalement?: string;
   source?: 'LOCAL' | 'FIREBASE';
+  photos?: string[];
 }
 
 export interface Signalement {

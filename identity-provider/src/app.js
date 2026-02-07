@@ -26,4 +26,13 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.get('/', (req, res) => res.json({ ok: true }));
 
+// Expose les fichiers uploadés (photos) statiquement
+const path = require('path');
+const fs = require('fs');
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
+
 module.exports = app;

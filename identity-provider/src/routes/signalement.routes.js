@@ -46,6 +46,18 @@ router.use(auth);
  *     SignalementCreate:
  *       type: object
  *       required:
+        photos:
+          type: array
+          items:
+            type: object
+            properties:
+              filename:
+                type: string
+              url:
+                type: string
+              created_at:
+                type: string
+                format: date-time
  *         - description
  *       properties:
  *         id_user:
@@ -72,6 +84,11 @@ router.use(auth);
  *         longitude:
  *           type: number
  *           description: Longitude du point cliqué sur la carte
+        photos:
+          type: array
+          items:
+            type: string
+            description: "Data URL (base64) ou chemin relatif d'une image"
  *         source:
  *           type: string
  *           enum: [LOCAL, FIREBASE]

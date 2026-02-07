@@ -1,4 +1,6 @@
 const db = require('../config/database');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * Helper pour mapper une ligne SQL en objet JSON avec latitude/longitude
@@ -95,7 +97,53 @@ async function createSignalement(data) {
   ];
 
   const result = await db.query(query, params);
-  return mapSignalementRow(result.rows[0]);
+  const created = mapSignalementRow(result.rows[0]);
+
+  // Handle photos (base64 data URLs or plain base64 strings)
+  if (Array.isArray(data.photos) && data.photos.length > 0) {
+    const uploadsRoot = path.join(__dirname, '..', 'uploads', 'signalements', String(created.id_signalement));
+    fs.mkdirSync(uploadsRoot, { recursive: true });
+
+    for (let i = 0; i < data.photos.length; i++) {
+      try {
+        const item = data.photos[i];
+        if (!item) continue;
+
+        // Parse data URL if present: data:[mime];base64,[data]
+        let matches = null;
+        let mime = 'image/jpeg';
+        let base64data = item;
+        if (typeof item === 'string' && item.startsWith('data:')) {
+          matches = item.match(/^data:(.+);base64,(.+)$/);
+          if (matches) {
+            mime = matches[1];
+            base64data = matches[2];
+          }
+        }
+
+        // Determine extension
+        let ext = '.jpg';
+        if (mime === 'image/png') ext = '.png';
+        else if (mime === 'image/webp') ext = '.webp';
+
+        const filename = `photo-${i + 1}${ext}`;
+        const filepath = path.join(uploadsRoot, filename);
+
+        const buffer = Buffer.from(base64data, 'base64');
+        fs.writeFileSync(filepath, buffer);
+
+        // Store metadata in DB
+        await db.query(
+          'INSERT INTO signalement_photos (id_signalement, filename, path) VALUES ($1, $2, $3)',
+          [created.id_signalement, filename, `/uploads/signalements/${created.id_signalement}/${filename}`]
+        );
+      } catch (e) {
+        console.warn('Failed to save photo', e && e.message);
+      }
+    }
+  }
+
+  return created;
 }
 
 /**
@@ -158,7 +206,14 @@ async function getSignalementById(id) {
   `;
 
   const result = await db.query(query, [id]);
-  return mapSignalementRow(result.rows[0]);
+  const row = result.rows[0];
+  const base = mapSignalementRow(row);
+  if (!base) return null;
+
+  // Récupérer les photos associées
+  const photosRes = await db.query('SELECT filename, path, created_at FROM signalement_photos WHERE id_signalement = $1 ORDER BY id_photo ASC', [id]);
+  base.photos = photosRes.rows.map(r => ({ filename: r.filename, url: r.path, created_at: r.created_at }));
+  return base;
 }
 
 /**
