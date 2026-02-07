@@ -7,6 +7,8 @@ const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:300
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 
+console.log('[Auth Service] API_BASE:', API_BASE);
+
 export interface AuthUser {
   id?: number;
   uid?: string;
@@ -37,32 +39,42 @@ export interface RegisterResponse {
  * Connexion via l'API
  */
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
+  const url = `${API_BASE}/api/auth/login`;
+  console.log('[Auth] Attempting login to:', url);
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Erreur de connexion' }));
-    throw new Error(error.error || `Erreur ${response.status}`);
+    console.log('[Auth] Response status:', response.status);
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Erreur de connexion' }));
+      throw new Error(error.error || `Erreur ${response.status}`);
+    }
+
+    const data: LoginResponse = await response.json();
+
+    // Stocker le token
+    if (data.token) {
+      localStorage.setItem(TOKEN_KEY, data.token);
+    }
+
+    // Stocker les infos utilisateur
+    const user: AuthUser = data.user || {
+      uid: data.uid,
+      email: data.email || email,
+    };
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+
+    return data;
+  } catch (err: any) {
+    console.error('[Auth] Login error:', err.message, err);
+    throw new Error(err.message || 'Failed to fetch');
   }
-
-  const data: LoginResponse = await response.json();
-
-  // Stocker le token
-  if (data.token) {
-    localStorage.setItem(TOKEN_KEY, data.token);
-  }
-
-  // Stocker les infos utilisateur
-  const user: AuthUser = data.user || {
-    uid: data.uid,
-    email: data.email || email,
-  };
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-
-  return data;
 }
 
 /**

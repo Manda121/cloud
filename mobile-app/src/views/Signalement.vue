@@ -503,7 +503,9 @@ async function takePhoto() {
   }
 
   // Sur le web (PC), ouvrir le modal webcam
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  const canUseWebcam = typeof navigator !== 'undefined'
+    && typeof navigator.mediaDevices?.getUserMedia === 'function';
+  if (canUseWebcam) {
     showWebcam.value = true;
   } else {
     // Fallback si pas de webcam API
