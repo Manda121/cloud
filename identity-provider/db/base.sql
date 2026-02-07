@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS historique_statuts (
     id_manager INTEGER REFERENCES users(id)
 );
 
-CREATE OR REPLACE VIEW v_stats_globales AS
+CREATE OR REPLACE VIEW v_stats_globales AS(
     id_manager UUID REFERENCES users(id_user)
 );
 
