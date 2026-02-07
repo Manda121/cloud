@@ -75,8 +75,7 @@ CREATE TABLE IF NOT EXISTS signalements (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table pour stocker les 
-s associées aux signalements
+-- Table pour stocker les photos associées aux signalements
 CREATE TABLE IF NOT EXISTS signalement_photos (
     id_photo SERIAL PRIMARY KEY,
     id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
@@ -91,9 +90,23 @@ CREATE TABLE IF NOT EXISTS historique_statuts (
     id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
     id_statut INT REFERENCES statuts_signalement(id_statut),
     date_changement TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
     id_manager INTEGER REFERENCES users(id)
 );
+
+-- Table des notifications
+CREATE TABLE IF NOT EXISTS notifications (
+    id_notification SERIAL PRIMARY KEY,
+    id_user INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    id_signalement UUID REFERENCES signalements(id_signalement) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL DEFAULT 'STATUS_CHANGE',
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(id_user);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(id_user, is_read);
 
 CREATE OR REPLACE VIEW v_stats_globales AS(
     id_manager UUID REFERENCES users(id_user)

@@ -101,30 +101,47 @@
             </ion-buttons>
           </ion-toolbar>
         </ion-header>
-        <ion-content class="ion-padding" v-if="editingSignalement">
-          <ion-item>
-            <ion-label position="stacked">Description</ion-label>
-            <ion-textarea v-model="editingSignalement.description" :rows="4"></ion-textarea>
-          </ion-item>
-          <ion-item>
-            <ion-label position="stacked">Surface (m²)</ion-label>
-            <ion-input type="number" v-model.number="editingSignalement.surface_m2"></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-label position="stacked">Budget (Ar)</ion-label>
-            <ion-input type="number" v-model.number="editingSignalement.budget"></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-label position="stacked">Statut</ion-label>
-            <ion-select v-model="editingSignalement.id_statut">
-              <ion-select-option :value="1">Nouveau</ion-select-option>
-              <ion-select-option :value="2">En cours</ion-select-option>
-              <ion-select-option :value="3">Terminé</ion-select-option>
-            </ion-select>
-          </ion-item>
+        <ion-content class="ion-padding modal-content" v-if="editingSignalement">
+          <div class="modal-form">
+            <div class="modal-form-group">
+              <label class="modal-label">Description</label>
+              <ion-textarea 
+                v-model="editingSignalement.description" 
+                :rows="4"
+                class="modal-input"
+                placeholder="Description du signalement..."
+              ></ion-textarea>
+            </div>
+            <div class="modal-form-group">
+              <label class="modal-label">Surface (m²)</label>
+              <ion-input 
+                type="number" 
+                v-model.number="editingSignalement.surface_m2"
+                class="modal-input"
+                placeholder="Ex: 10"
+              ></ion-input>
+            </div>
+            <div class="modal-form-group">
+              <label class="modal-label">Budget (Ar)</label>
+              <ion-input 
+                type="number" 
+                v-model.number="editingSignalement.budget"
+                class="modal-input"
+                placeholder="Ex: 50000"
+              ></ion-input>
+            </div>
+            <div class="modal-form-group">
+              <label class="modal-label">Statut</label>
+              <ion-select v-model="editingSignalement.id_statut" class="modal-select" interface="popover">
+                <ion-select-option :value="1">Nouveau</ion-select-option>
+                <ion-select-option :value="2">En cours</ion-select-option>
+                <ion-select-option :value="3">Terminé</ion-select-option>
+              </ion-select>
+            </div>
+          </div>
           <div class="modal-actions">
-            <ion-button expand="block" @click="saveEdit" :disabled="saving">
-              {{ saving ? 'Enregistrement...' : 'Enregistrer' }}
+            <ion-button expand="block" @click="saveEdit" :disabled="saving" class="modal-save-btn">
+              {{ saving ? 'Enregistrement...' : 'Enregistrer les modifications' }}
             </ion-button>
           </div>
         </ion-content>
@@ -243,6 +260,8 @@ async function saveEdit() {
     if (!response.ok) throw new Error('Erreur lors de la mise à jour');
     editModalOpen.value = false;
     showToast('Signalement mis à jour', 'success');
+    // Notify sidebar to refresh notification count
+    window.dispatchEvent(new CustomEvent('notifications:updated'));
     await loadData();
   } catch (err: any) {
     showToast(err.message || 'Erreur', 'danger');
@@ -327,40 +346,51 @@ function getStatusClass(id: number): string {
 .stats-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 20px;
 }
 
 .stat-card {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 14px;
+  padding: 16px 12px;
   text-align: center;
   color: white;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  transition: transform 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
 }
 
 .stat-card.stat-nouveau {
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  box-shadow: 0 4px 15px rgba(245, 87, 108, 0.3);
 }
 
 .stat-card.stat-encours {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
 }
 
 .stat-card.stat-termine {
   background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  box-shadow: 0 4px 15px rgba(67, 233, 123, 0.3);
 }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 26px;
+  font-weight: 800;
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 11px;
   opacity: 0.9;
   margin-top: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .loading-container {
@@ -369,7 +399,12 @@ function getStatusClass(id: number): string {
   align-items: center;
   justify-content: center;
   height: 300px;
-  color: var(--ion-color-medium);
+  color: #718096;
+}
+
+.loading-container p {
+  font-size: 14px;
+  margin-top: 12px;
 }
 
 .empty-state {
@@ -379,13 +414,18 @@ function getStatusClass(id: number): string {
   justify-content: center;
   height: 400px;
   text-align: center;
-  color: var(--ion-color-medium);
+  color: #718096;
 }
 
 .empty-icon {
   font-size: 64px;
   margin-bottom: 16px;
-  opacity: 0.5;
+  opacity: 0.4;
+}
+
+.empty-state h3 {
+  color: #4a5568;
+  margin-bottom: 8px;
 }
 
 .signalements-list {
@@ -393,11 +433,16 @@ function getStatusClass(id: number): string {
 }
 
 .signalement-item {
-  --background: var(--ion-card-background, #fff);
-  margin-bottom: 12px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --background: #ffffff;
+  margin-bottom: 10px;
+  border-radius: 14px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.signalement-item:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .signalement-item.status-nouveau {
@@ -421,11 +466,12 @@ function getStatusClass(id: number): string {
   font-weight: 600;
   font-size: 15px;
   margin-bottom: 4px;
+  color: #1a202c;
 }
 
 .meta {
   font-size: 12px;
-  color: var(--ion-color-medium);
+  color: #718096;
   display: flex;
   gap: 12px;
 }
@@ -439,14 +485,84 @@ function getStatusClass(id: number): string {
 
 .surface, .budget {
   font-size: 12px;
-  color: var(--ion-color-medium);
-  background: var(--ion-color-light);
+  color: #4a5568;
+  background: #f0f4f8;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* ============================
+   MODAL FORM STYLING
+   ============================ */
+.modal-content {
+  --background: #f0f2f5;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-left: 2px;
+}
+
+.modal-input {
+  --background: #ffffff !important;
+  --color: #2d3748 !important;
+  --placeholder-color: #a0aec0 !important;
+  --placeholder-opacity: 1 !important;
+  --padding-start: 16px;
+  --padding-end: 16px;
+  border: 2px solid #d1d9e6;
+  border-radius: 12px;
+  background: #ffffff !important;
+  color: #2d3748 !important;
+  font-size: 15px;
+  transition: border-color 0.2s ease;
+}
+
+.modal-input:focus-within {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+}
+
+.modal-select {
+  --background: #ffffff;
+  --color: #2d3748;
+  --placeholder-color: #a0aec0;
+  border: 2px solid #d1d9e6;
+  border-radius: 12px;
+  padding: 8px 16px;
+  font-size: 15px;
+  color: #2d3748;
+  background: #ffffff;
 }
 
 .modal-actions {
-  margin-top: 24px;
+  margin-top: 28px;
+}
+
+.modal-save-btn {
+  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --border-radius: 14px;
+  height: 52px;
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
 }
 
 ion-fab-button {

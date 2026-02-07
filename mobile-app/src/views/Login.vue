@@ -162,7 +162,7 @@ function goToRegister() {
   display: flex;
   flex-direction: column;
   padding: 24px;
-  background: linear-gradient(180deg, #f0f4f8 0%, #e2e8f0 100%);
+  background: linear-gradient(180deg, #f0f2f5 0%, #e2e8f0 100%);
 }
 
 .login-header {
@@ -191,7 +191,7 @@ function goToRegister() {
   margin: 0 0 8px;
   font-size: 24px;
   font-weight: 700;
-  color: #2d3748;
+  color: #1a202c;
 }
 
 .login-header p {
@@ -233,17 +233,23 @@ function goToRegister() {
 }
 
 .custom-input {
-  --background: #f7fafc;
+  --background: #ffffff;
+  --color: #2d3748 !important;
+  --placeholder-color: #a0aec0 !important;
+  --placeholder-opacity: 1 !important;
   --padding-start: 16px;
   --padding-end: 50px;
-  border: 2px solid #e2e8f0;
+  border: 2px solid #d1d9e6;
   border-radius: 12px;
   height: 50px;
   width: 100%;
+  background: #ffffff;
+  color: #2d3748 !important;
 }
 
 .custom-input:focus-within {
   border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
 }
 
 .toggle-password {

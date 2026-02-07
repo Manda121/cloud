@@ -21,9 +21,14 @@
             </ion-avatar>
             <div class="user-info">
               <p class="user-email">{{ currentUser.email }}</p>
-              <p class="user-status">Connecté</p>
+              <p class="user-status">
+                <span class="status-dot"></span>
+                Connecté
+              </p>
             </div>
           </div>
+
+          <div class="menu-section-label" v-if="isLoggedIn">NAVIGATION</div>
 
           <ion-list lines="none" class="menu-list">
             <ion-menu-toggle :auto-hide="false">
@@ -41,6 +46,19 @@
               </ion-item>
             </ion-menu-toggle>
 
+            <ion-menu-toggle :auto-hide="false" v-if="isLoggedIn">
+              <ion-item router-link="/notifications" router-direction="root" class="menu-item">
+                <ion-icon :icon="notificationsOutline" slot="start"></ion-icon>
+                <ion-label>Notifications</ion-label>
+                <ion-badge color="danger" slot="end" v-if="unreadNotifCount > 0">{{ unreadNotifCount }}</ion-badge>
+              </ion-item>
+            </ion-menu-toggle>
+          </ion-list>
+
+          <div class="menu-divider"></div>
+          <div class="menu-section-label">COMPTE</div>
+
+          <ion-list lines="none" class="menu-list">
             <ion-menu-toggle :auto-hide="false" v-if="!isLoggedIn">
               <ion-item router-link="/login" router-direction="root" class="menu-item">
                 <ion-icon :icon="logInOutline" slot="start"></ion-icon>
@@ -49,7 +67,7 @@
             </ion-menu-toggle>
 
             <ion-menu-toggle :auto-hide="false" v-if="isLoggedIn">
-              <ion-item @click="handleLogout" class="menu-item">
+              <ion-item @click="handleLogout" class="menu-item menu-item-danger">
                 <ion-icon :icon="logOutOutline" slot="start"></ion-icon>
                 <ion-label>Déconnexion</ion-label>
               </ion-item>
@@ -57,7 +75,10 @@
           </ion-list>
 
           <div class="menu-footer">
-            <p>RoadWatch v1.0</p>
+            <div class="footer-brand">
+              <ion-icon :icon="constructOutline"></ion-icon>
+              <span>RoadWatch v1.0</span>
+            </div>
             <p class="copyright">© 2026 Madagascar</p>
           </div>
         </ion-content>
@@ -78,25 +99,35 @@ import {
   IonBadge, IonAvatar
 } from '@ionic/vue';
 import {
-  mapOutline, listOutline, logInOutline, logOutOutline, constructOutline
+  mapOutline, listOutline, logInOutline, logOutOutline, constructOutline,
+  notificationsOutline
 } from 'ionicons/icons';
 import { isAuthenticated, getCurrentUser, logout, AuthUser } from './services/auth';
 import { getSignalements } from './services/signalement';
+import { getUnreadCount } from './services/notification';
 
 const router = useRouter();
 const isLoggedIn = ref(false);
 const currentUser = ref<AuthUser | null>(null);
 const signalementCount = ref(0);
+const unreadNotifCount = ref(0);
 
 onMounted(() => {
   checkAuth();
   loadSignalementCount();
+  loadUnreadNotifCount();
 });
 
 // Watch for route changes to update auth state
 watch(() => router.currentRoute.value, () => {
   checkAuth();
   loadSignalementCount();
+  loadUnreadNotifCount();
+});
+
+// Listen for notification updates
+window.addEventListener('notifications:updated', () => {
+  loadUnreadNotifCount();
 });
 
 function checkAuth() {
@@ -114,10 +145,23 @@ async function loadSignalementCount() {
   }
 }
 
+async function loadUnreadNotifCount() {
+  if (!isAuthenticated()) {
+    unreadNotifCount.value = 0;
+    return;
+  }
+  try {
+    unreadNotifCount.value = await getUnreadCount();
+  } catch {
+    unreadNotifCount.value = 0;
+  }
+}
+
 function handleLogout() {
   logout();
   isLoggedIn.value = false;
   currentUser.value = null;
+  unreadNotifCount.value = 0;
   router.push('/login');
 }
 
@@ -127,7 +171,9 @@ function getInitials(email: string): string {
 </script>
 
 <style>
-/* Global styles */
+/* ============================
+   GLOBAL DESIGN SYSTEM
+   ============================ */
 :root {
   --ion-color-primary: #667eea;
   --ion-color-primary-rgb: 102, 126, 234;
@@ -139,148 +185,361 @@ function getInitials(email: string): string {
   --ion-color-secondary-rgb: 118, 75, 162;
   --ion-color-secondary-contrast: #ffffff;
 
-  --ion-background-color: #f8fafc;
+  --ion-background-color: #f0f2f5;
   --ion-card-background: #ffffff;
   --ion-toolbar-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   --ion-toolbar-color: #ffffff;
+  
+  --app-sidebar-bg: #0f1629;
+  --app-sidebar-hover: rgba(102, 126, 234, 0.12);
+  --app-sidebar-active: rgba(102, 126, 234, 0.2);
+  --app-text-primary: #1a202c;
+  --app-text-secondary: #718096;
+  --app-text-muted: #a0aec0;
+  --app-border: #e2e8f0;
+  --app-input-bg: #ffffff;
+  --app-input-border: #d1d9e6;
+  --app-input-text: #2d3748;
+  --app-input-placeholder: #a0aec0;
 }
 
+/* ============================
+   TOOLBAR
+   ============================ */
 ion-toolbar {
   --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   --color: white;
 }
 
+/* ============================
+   SIDEBAR MENU - MODERN DARK
+   ============================ */
 ion-menu {
-  --background: #1a1a2e;
-  --ion-background-color: #1a1a2e;
+  --background: var(--app-sidebar-bg);
+  --ion-background-color: var(--app-sidebar-bg);
+  --width: 300px;
 }
 
 ion-menu ion-content {
-  --background: #1a1a2e;
+  --background: var(--app-sidebar-bg);
 }
 
 ion-menu ion-toolbar {
   --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --min-height: 60px;
 }
 
 .menu-header {
   display: flex;
   align-items: center;
   gap: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .menu-logo {
-  font-size: 28px;
+  font-size: 26px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
 }
 
+/* User Card */
 .user-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px 16px;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
-  margin: 12px;
-  border-radius: 12px;
+  gap: 14px;
+  padding: 20px 20px 16px;
+  margin: 16px 14px 8px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
 }
 
 .avatar-placeholder {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 50%;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .user-info {
   flex: 1;
+  min-width: 0;
 }
 
 .user-email {
-  color: #fff;
+  color: #e2e8f0;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .user-status {
-  color: #43e97b;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #48bb78;
+  font-size: 11px;
   margin: 4px 0 0;
+  font-weight: 500;
 }
 
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #48bb78;
+  box-shadow: 0 0 6px rgba(72, 187, 120, 0.6);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(72, 187, 120, 0.6); }
+  50% { box-shadow: 0 0 12px rgba(72, 187, 120, 0.9); }
+}
+
+/* Section Labels */
+.menu-section-label {
+  padding: 16px 22px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #4a5568;
+  text-transform: uppercase;
+}
+
+.menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 8px 20px;
+}
+
+/* Menu Items */
 .menu-list {
   background: transparent;
-  padding: 8px;
+  padding: 4px 10px;
 }
 
 .menu-item {
   --background: transparent;
-  --color: #a0aec0;
-  --padding-start: 16px;
+  --color: #94a3b8;
+  --padding-start: 18px;
+  --padding-end: 14px;
   --border-radius: 12px;
-  margin-bottom: 4px;
-  transition: all 0.2s ease;
+  --min-height: 48px;
+  margin-bottom: 2px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .menu-item:hover {
-  --background: rgba(102, 126, 234, 0.15);
-  --color: #fff;
+  --background: var(--app-sidebar-hover);
+  --color: #e2e8f0;
 }
 
 .menu-item ion-icon {
   color: #667eea;
-  font-size: 22px;
+  font-size: 20px;
+  margin-right: 4px;
 }
 
 .menu-item.router-link-active {
-  --background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+  --background: var(--app-sidebar-active);
   --color: #fff;
 }
 
+.menu-item.router-link-active ion-icon {
+  color: #818cf8;
+}
+
+.menu-item-danger:hover {
+  --background: rgba(245, 87, 108, 0.12);
+}
+
+.menu-item-danger ion-icon {
+  color: #f5576c !important;
+}
+
+/* Menu Footer */
 .menu-footer {
   position: absolute;
-  bottom: 20px;
+  bottom: 0;
   left: 0;
   right: 0;
+  padding: 16px 20px;
   text-align: center;
+  background: linear-gradient(180deg, transparent 0%, rgba(15, 22, 41, 0.9) 40%);
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   color: #4a5568;
   font-size: 12px;
+  font-weight: 600;
+}
+
+.footer-brand ion-icon {
+  font-size: 14px;
+  color: #667eea;
 }
 
 .menu-footer .copyright {
   margin-top: 4px;
-  opacity: 0.7;
+  font-size: 10px;
+  color: #2d3748;
 }
 
-/* Page transitions */
-ion-router-outlet {
-  background: var(--ion-background-color);
+/* ============================
+   GLOBAL INPUT OVERRIDES - FIX WHITE TEXT ON WHITE BG
+   ============================ */
+ion-input,
+ion-textarea {
+  --color: var(--app-input-text) !important;
+  --placeholder-color: var(--app-input-placeholder) !important;
+  --placeholder-opacity: 1 !important;
+  color: var(--app-input-text) !important;
 }
 
-/* Card styling */
+ion-input .native-input,
+ion-input input,
+ion-textarea textarea,
+ion-textarea .native-textarea {
+  color: var(--app-input-text) !important;
+  caret-color: #667eea !important;
+}
+
+ion-input .native-input::placeholder,
+ion-textarea textarea::placeholder,
+ion-textarea .native-textarea::placeholder {
+  color: var(--app-input-placeholder) !important;
+  opacity: 1 !important;
+}
+
+/* Custom input styling for forms */
+.custom-input,
+.custom-textarea {
+  --background: var(--app-input-bg) !important;
+  --color: var(--app-input-text) !important;
+  --placeholder-color: var(--app-input-placeholder) !important;
+  --border-radius: 12px;
+  --padding-start: 16px;
+  --padding-end: 16px;
+  border: 2px solid var(--app-input-border) !important;
+  border-radius: 12px;
+  background: var(--app-input-bg) !important;
+  color: var(--app-input-text) !important;
+  transition: border-color 0.2s ease;
+}
+
+.custom-input:focus-within,
+.custom-textarea:focus-within {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Modal inputs */
+ion-modal ion-input,
+ion-modal ion-textarea,
+ion-modal ion-select {
+  --color: var(--app-input-text) !important;
+  --placeholder-color: var(--app-input-placeholder) !important;
+  color: var(--app-input-text) !important;
+}
+
+ion-modal ion-item {
+  --background: #f8fafc;
+  --border-radius: 12px;
+  --border-color: var(--app-input-border);
+  margin-bottom: 12px;
+}
+
+ion-modal ion-label {
+  color: var(--app-text-primary) !important;
+  font-weight: 600 !important;
+}
+
+/* Select styling */
+ion-select {
+  --color: var(--app-input-text) !important;
+  --placeholder-color: var(--app-input-placeholder) !important;
+  color: var(--app-input-text) !important;
+}
+
+/* Datetime styling */
+ion-datetime {
+  --background: #ffffff;
+  --background-rgb: 255, 255, 255;
+  color: var(--app-input-text);
+  border-radius: 12px;
+}
+
+/* ============================
+   CARD & BUTTON STYLING
+   ============================ */
 ion-card {
   border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
-/* Button styling */
 ion-button {
   --border-radius: 12px;
   font-weight: 600;
 }
 
-/* Input styling */
 ion-item {
   --border-radius: 12px;
 }
 
-ion-input, ion-textarea {
-  --padding-start: 12px;
+/* ============================
+   BADGE STYLING
+   ============================ */
+ion-badge {
+  --border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  min-width: 22px;
+  text-align: center;
+}
+
+/* ============================
+   PAGE TRANSITIONS
+   ============================ */
+ion-router-outlet {
+  background: var(--ion-background-color);
+}
+
+/* ============================
+   SCROLLBAR STYLING
+   ============================ */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 126, 234, 0.4);
 }
 </style>
 

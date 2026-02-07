@@ -13,63 +13,72 @@ http://ionicframework.com/docs/theming/ */
 	--font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
 
 	/* Primary / Secondary */
-	--ion-color-primary: #2563eb; /* blue-600 */
+	--ion-color-primary: #667eea;
 	--ion-color-primary-contrast: #ffffff;
-	--ion-color-secondary: #7c3aed; /* purple-600 */
+	--ion-color-primary-shade: #5a6fd3;
+	--ion-color-primary-tint: #7a8eec;
+	--ion-color-secondary: #764ba2;
 	--ion-color-secondary-contrast: #ffffff;
 
 	/* Background / surfaces / borders */
-	--ion-background: #ffffff;
-	--ion-surface: #f8fafc;
-	--ion-border: #e6eef7;
+	--ion-background: #f0f2f5;
+	--ion-surface: #ffffff;
+	--ion-border: #e2e8f0;
 
 	/* Text / muted */
-	--ion-text-color: #0f172a; /* near-black for high contrast */
-	--ion-muted: #6b7280;
+	--ion-text-color: #1a202c;
+	--ion-muted: #718096;
 
 	/* Inputs / focus / elevation */
 	--ion-input-background: #ffffff;
-	--ion-focus: 0 0 0 3px rgba(37,99,235,0.14);
-	--ion-radius: 10px;
-	--ion-elevation: 0 8px 24px rgba(15,23,42,0.06);
+	--ion-focus: 0 0 0 3px rgba(102, 126, 234, 0.14);
+	--ion-radius: 12px;
+	--ion-elevation: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+	/* Force input text dark */
+	--ion-item-color: #1a202c;
 }
 
 /* --- Dark theme (system or explicit) --- */
 @media (prefers-color-scheme: dark) {
 	:root {
-		--ion-color-primary: #1d4ed8; /* blue-700 */
+		--ion-color-primary: #667eea;
 		--ion-color-primary-contrast: #ffffff;
-		--ion-color-secondary: #6d28d9;
+		--ion-color-secondary: #764ba2;
 
-		--ion-background: #0b1220;
-		--ion-surface: #0f1724;
-		--ion-border: rgba(255,255,255,0.06);
+		--ion-background: #0f1629;
+		--ion-surface: #1a2332;
+		--ion-border: rgba(255,255,255,0.08);
 
-		--ion-text-color: #e6eef8;
-		--ion-muted: #9aa4b2;
+		--ion-text-color: #e2e8f0;
+		--ion-muted: #94a3b8;
 
-		--ion-input-background: #0f1722;
-		--ion-focus: 0 0 0 3px rgba(59,130,246,0.14);
-		--ion-elevation: 0 8px 28px rgba(2,6,23,0.8);
+		--ion-input-background: #1a2332;
+		--ion-focus: 0 0 0 3px rgba(102, 126, 234, 0.2);
+		--ion-elevation: 0 4px 20px rgba(0, 0, 0, 0.4);
+		
+		--ion-item-color: #e2e8f0;
 	}
 }
 
-/* Explicit dark toggle (if you add/remove .dark on <body>) */
+/* Explicit dark toggle */
 body.dark {
-	--ion-color-primary: #1d4ed8;
+	--ion-color-primary: #667eea;
 	--ion-color-primary-contrast: #ffffff;
-	--ion-color-secondary: #6d28d9;
+	--ion-color-secondary: #764ba2;
 
-	--ion-background: #0b1220;
-	--ion-surface: #0f1724;
-	--ion-border: rgba(255,255,255,0.06);
+	--ion-background: #0f1629;
+	--ion-surface: #1a2332;
+	--ion-border: rgba(255,255,255,0.08);
 
-	--ion-text-color: #e6eef8;
-	--ion-muted: #9aa4b2;
+	--ion-text-color: #e2e8f0;
+	--ion-muted: #94a3b8;
 
-	--ion-input-background: #0f1722;
-	--ion-focus: 0 0 0 3px rgba(59,130,246,0.14);
-	--ion-elevation: 0 8px 28px rgba(2,6,23,0.8);
+	--ion-input-background: #1a2332;
+	--ion-focus: 0 0 0 3px rgba(102, 126, 234, 0.2);
+	--ion-elevation: 0 4px 20px rgba(0, 0, 0, 0.4);
+	
+	--ion-item-color: #e2e8f0;
 }
 
 /* Map to Ionic-like variables for convenience */
@@ -77,7 +86,6 @@ body.dark {
 	color-scheme: light;
 	--ion-background-color: var(--ion-background);
 	--ion-surface-color: var(--ion-surface);
-	--ion-text-color: var(--ion-text-color);
 }
 
 @media (prefers-color-scheme: dark) {

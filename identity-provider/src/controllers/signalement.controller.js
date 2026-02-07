@@ -1,6 +1,7 @@
 const service = require('../services/signalement.service');
 const localAuth = require('../services/auth.local.service');
 const firebaseAuth = require('../services/auth.firebase.service');
+const notificationService = require('../services/notification.service');
 
 /**
  * Créer un nouveau signalement
@@ -92,8 +93,24 @@ exports.getOne = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Récupérer l'ancien signalement pour comparer le statut
+    const oldSignalement = await service.getSignalementById(id);
+    if (!oldSignalement) return res.status(404).json({ error: 'Signalement introuvable' });
+    
+    const oldStatus = oldSignalement.id_statut;
     const updated = await service.updateSignalement(id, req.body || {});
     if (!updated) return res.status(404).json({ error: 'Signalement introuvable' });
+    
+    // Si le statut a changé, créer une notification
+    if (req.body.id_statut && req.body.id_statut !== oldStatus) {
+      try {
+        await notificationService.notifyStatusChange(updated, oldStatus, req.body.id_statut);
+      } catch (notifErr) {
+        console.warn('[Signalements] notification creation failed:', notifErr.message);
+      }
+    }
+    
     res.json(updated);
   } catch (e) {
     console.error('[Signalements] update error:', e.message);

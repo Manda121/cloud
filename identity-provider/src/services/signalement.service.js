@@ -220,34 +220,57 @@ async function getSignalementById(id) {
  * Mettre à jour un signalement
  */
 async function updateSignalement(id, data) {
-  const {
-    id_statut,
-    id_entreprise,
-    description,
-    surface_m2,
-    budget,
-    date_signalement,
-    latitude,
-    longitude,
-    source,
-    synced,
-  } = data;
+  // Construction dynamique de la requête UPDATE
+  // Seuls les champs réellement fournis sont mis à jour
+  const setClauses = [];
+  const params = [id]; // $1 = id
+
+  if (data.id_statut !== undefined && data.id_statut !== null) {
+    params.push(data.id_statut);
+    setClauses.push(`id_statut = $${params.length}`);
+  }
+  if (data.id_entreprise !== undefined && data.id_entreprise !== null) {
+    params.push(data.id_entreprise);
+    setClauses.push(`id_entreprise = $${params.length}`);
+  }
+  if (data.description !== undefined && data.description !== null) {
+    params.push(data.description);
+    setClauses.push(`description = $${params.length}`);
+  }
+  if (data.surface_m2 !== undefined && data.surface_m2 !== null) {
+    params.push(data.surface_m2);
+    setClauses.push(`surface_m2 = $${params.length}`);
+  }
+  if (data.budget !== undefined && data.budget !== null) {
+    params.push(data.budget);
+    setClauses.push(`budget = $${params.length}`);
+  }
+  if (data.date_signalement !== undefined && data.date_signalement !== null) {
+    params.push(data.date_signalement);
+    setClauses.push(`date_signalement = $${params.length}::date`);
+  }
+  if (data.latitude != null && data.longitude != null) {
+    params.push(data.longitude);
+    params.push(data.latitude);
+    setClauses.push(`geom = ST_SetSRID(ST_MakePoint($${params.length - 1}::double precision, $${params.length}::double precision), 4326)`);
+  }
+  if (data.source !== undefined && data.source !== null) {
+    params.push(data.source);
+    setClauses.push(`source = $${params.length}`);
+  }
+  if (typeof data.synced === 'boolean') {
+    params.push(data.synced);
+    setClauses.push(`synced = $${params.length}`);
+  }
+
+  if (setClauses.length === 0) {
+    // Rien à mettre à jour, retourner le signalement existant
+    return getSignalementById(id);
+  }
 
   const query = `
     UPDATE signalements
-    SET
-      id_statut = COALESCE($2, id_statut),
-      id_entreprise = COALESCE($3, id_entreprise),
-      description = COALESCE($4, description),
-      surface_m2 = COALESCE($5, surface_m2),
-      budget = COALESCE($6, budget),
-      date_signalement = COALESCE($7::date, date_signalement),
-      geom = CASE
-        WHEN $8 IS NOT NULL AND $9 IS NOT NULL THEN ST_SetSRID(ST_MakePoint($9::double precision, $8::double precision), 4326)
-        ELSE geom
-      END,
-      source = COALESCE($10, source),
-      synced = COALESCE($11, synced)
+    SET ${setClauses.join(', ')}
     WHERE id_signalement = $1
     RETURNING
       id_signalement,
@@ -264,20 +287,6 @@ async function updateSignalement(id, data) {
       ST_Y(geom) AS latitude,
       ST_X(geom) AS longitude;
   `;
-
-  const params = [
-    id,
-    id_statut || null,
-    id_entreprise || null,
-    description || null,
-    surface_m2 || null,
-    budget || null,
-    date_signalement || null,
-    latitude || null,
-    longitude || null,
-    source || null,
-    typeof synced === 'boolean' ? synced : null,
-  ];
 
   const result = await db.query(query, params);
   return mapSignalementRow(result.rows[0]);
