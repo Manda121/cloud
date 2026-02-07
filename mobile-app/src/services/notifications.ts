@@ -152,16 +152,44 @@ export function initFCM(): Messaging | null {
 }
 
 /**
+ * Enregistrer le service worker FCM
+ */
+async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator)) {
+    console.warn('[Notifications] Service workers not supported');
+    return null;
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    console.log('[Notifications] Service worker registered:', registration.scope);
+    return registration;
+  } catch (error) {
+    console.error('[Notifications] Service worker registration failed:', error);
+    return null;
+  }
+}
+
+/**
  * Demander la permission et récupérer le token FCM
  */
 export async function requestNotificationPermission(): Promise<string | null> {
   try {
+    // Vérifier si les notifications sont supportées
+    if (!('Notification' in window)) {
+      console.warn('[Notifications] Notifications not supported in this browser');
+      return null;
+    }
+
     const permission = await Notification.requestPermission();
     
     if (permission !== 'granted') {
       console.log('[Notifications] Permission denied');
       return null;
     }
+
+    // Enregistrer le service worker
+    const swRegistration = await registerServiceWorker();
 
     if (!messaging) {
       initFCM();
@@ -172,7 +200,16 @@ export async function requestNotificationPermission(): Promise<string | null> {
       return null;
     }
 
-    const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+    // Récupérer le token avec le service worker registration
+    const tokenOptions: { vapidKey: string; serviceWorkerRegistration?: ServiceWorkerRegistration } = {
+      vapidKey: VAPID_KEY,
+    };
+
+    if (swRegistration) {
+      tokenOptions.serviceWorkerRegistration = swRegistration;
+    }
+
+    const token = await getToken(messaging, tokenOptions);
     console.log('[Notifications] FCM Token:', token);
     
     return token;
