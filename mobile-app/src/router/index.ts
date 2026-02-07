@@ -18,6 +18,11 @@ const routes: Array<RouteRecordRaw> = [
     component: LoginPage
   },
   {
+    path: '/register',
+    name: 'Register',
+    component: () => import('../views/Register.vue')
+  },
+  {
     path: '/carte',
     name: 'Carte',
     component: CartePage
