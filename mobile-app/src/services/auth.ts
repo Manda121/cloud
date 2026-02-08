@@ -1,19 +1,35 @@
 /**
- * Service d'authentification
- * Appelle l'API identity-provider et stocke le token
+ * Service d'authentification HYBRIDE
+ * 
+ * Stratégie :
+ * 1. Essayer d'abord via le backend (identity-provider) si disponible
+ * 2. Si le backend est indisponible (Failed to fetch), fallback sur Firebase direct
+ * 3. Les signalements sont stockés dans Firestore quand le backend est down
+ * 
+ * Cela permet à l'app de fonctionner sur n'importe quel appareil,
+ * même sans le backend Docker lancé sur votre PC.
  */
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
+import { auth as firebaseAuth } from './firebase';
+import { isBackendReachable, getBackendUrl } from './backend';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signOut as firebaseSignOut,
+  signInAnonymously,
+} from 'firebase/auth';
+
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
-
-console.log('[Auth Service] API_BASE:', API_BASE);
+const AUTH_MODE_KEY = 'auth_mode'; // 'backend' ou 'firebase-direct'
 
 export interface AuthUser {
   id?: number;
   uid?: string;
   email: string;
   firebase_uid?: string;
+  displayName?: string;
 }
 
 export interface LoginResponse {
@@ -21,7 +37,7 @@ export interface LoginResponse {
   user?: AuthUser;
   uid?: string;
   email?: string;
-  authMode: 'local' | 'firebase';
+  authMode: 'local' | 'firebase' | 'firebase-direct';
   message?: string;
 }
 
@@ -29,63 +45,154 @@ export interface RegisterResponse {
   idToken?: string;
   localId?: string;
   email?: string;
-  authMode: 'local' | 'firebase';
+  authMode: 'local' | 'firebase' | 'firebase-direct';
   message?: string;
-  // local mode fields
   id?: number;
 }
 
 /**
- * Connexion via l'API
+ * Login via Firebase directement (sans backend)
+ */
+async function loginFirebaseDirect(email: string, password: string): Promise<LoginResponse> {
+  console.log('[Auth] Login Firebase direct...');
+  const userCredential = await signInWithEmailAndPassword(firebaseAuth, email, password);
+  const user = userCredential.user;
+  const idToken = await user.getIdToken();
+
+  // Stocker le token et les infos
+  localStorage.setItem(TOKEN_KEY, idToken);
+  localStorage.setItem(AUTH_MODE_KEY, 'firebase-direct');
+
+  const authUser: AuthUser = {
+    uid: user.uid,
+    email: user.email || email,
+    firebase_uid: user.uid,
+    displayName: user.displayName || undefined,
+  };
+  localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+
+  return {
+    token: idToken,
+    user: authUser,
+    uid: user.uid,
+    email: user.email || email,
+    authMode: 'firebase-direct',
+    message: 'Connexion Firebase directe (backend indisponible)',
+  };
+}
+
+/**
+ * Login via le backend (identity-provider)
+ */
+async function loginViaBackend(email: string, password: string): Promise<LoginResponse> {
+  const API_BASE = getBackendUrl();
+  const url = `${API_BASE}/api/auth/login`;
+  console.log('[Auth] Login via backend:', url);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Erreur de connexion' }));
+    throw new Error(error.error || `Erreur ${response.status}`);
+  }
+
+  const data: LoginResponse = await response.json();
+
+  if (data.token) {
+    localStorage.setItem(TOKEN_KEY, data.token);
+  }
+  localStorage.setItem(AUTH_MODE_KEY, 'backend');
+
+  const user: AuthUser = data.user || {
+    uid: data.uid,
+    email: data.email || email,
+  };
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+
+  return data;
+}
+
+/**
+ * Connexion hybride : backend d'abord, puis Firebase direct en fallback
  */
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  const url = `${API_BASE}/api/auth/login`;
-  console.log('[Auth] Attempting login to:', url);
-  
+  console.log('[Auth] Attempting hybrid login...');
+
+  // 1. Essayer via le backend
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-
-    console.log('[Auth] Response status:', response.status);
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Erreur de connexion' }));
-      throw new Error(error.error || `Erreur ${response.status}`);
+    const backendReachable = await isBackendReachable();
+    if (backendReachable) {
+      return await loginViaBackend(email, password);
     }
-
-    const data: LoginResponse = await response.json();
-
-    // Stocker le token
-    if (data.token) {
-      localStorage.setItem(TOKEN_KEY, data.token);
-    }
-
-    // Stocker les infos utilisateur
-    const user: AuthUser = data.user || {
-      uid: data.uid,
-      email: data.email || email,
-    };
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-
-    return data;
   } catch (err: any) {
-    console.error('[Auth] Login error:', err.message, err);
-    throw new Error(err.message || 'Failed to fetch');
+    console.warn('[Auth] Backend login failed:', err.message);
+  }
+
+  // 2. Fallback : Firebase direct
+  try {
+    return await loginFirebaseDirect(email, password);
+  } catch (err: any) {
+    console.error('[Auth] Firebase direct login failed:', err.message);
+    // Traduire les erreurs Firebase en messages user-friendly
+    const msg = translateFirebaseError(err.code || err.message);
+    throw new Error(msg);
   }
 }
 
 /**
- * Inscription via l'API
+ * Register via Firebase directement (sans backend)
  */
-export async function register(
+async function registerFirebaseDirect(
   email: string,
   password: string,
   firstname?: string,
-  lastname?: string
+  lastname?: string,
 ): Promise<RegisterResponse> {
+  console.log('[Auth] Register Firebase direct...');
+  const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
+  const user = userCredential.user;
+
+  // Mettre à jour le profil avec le nom
+  const displayName = [firstname, lastname].filter(Boolean).join(' ');
+  if (displayName) {
+    await updateProfile(user, { displayName });
+  }
+
+  const idToken = await user.getIdToken();
+  localStorage.setItem(TOKEN_KEY, idToken);
+  localStorage.setItem(AUTH_MODE_KEY, 'firebase-direct');
+
+  const authUser: AuthUser = {
+    uid: user.uid,
+    email: user.email || email,
+    firebase_uid: user.uid,
+    displayName: displayName || undefined,
+  };
+  localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+
+  return {
+    idToken,
+    localId: user.uid,
+    email: user.email || email,
+    authMode: 'firebase-direct',
+    message: 'Inscription Firebase directe (backend indisponible)',
+  };
+}
+
+/**
+ * Register via le backend
+ */
+async function registerViaBackend(
+  email: string,
+  password: string,
+  firstname?: string,
+  lastname?: string,
+): Promise<RegisterResponse> {
+  const API_BASE = getBackendUrl();
   const response = await fetch(`${API_BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -93,32 +200,87 @@ export async function register(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Erreur d\'inscription' }));
+    const error = await response.json().catch(() => ({ error: "Erreur d'inscription" }));
     throw new Error(error.error || `Erreur ${response.status}`);
   }
 
   const data: RegisterResponse = await response.json();
 
-  // Si on reçoit un idToken (Firebase), le stocker
   if (data.idToken) {
     localStorage.setItem(TOKEN_KEY, data.idToken);
   }
+  localStorage.setItem(AUTH_MODE_KEY, 'backend');
 
   return data;
 }
 
 /**
- * Déconnexion
+ * Inscription hybride : backend d'abord, puis Firebase direct
  */
-export function logout(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+export async function register(
+  email: string,
+  password: string,
+  firstname?: string,
+  lastname?: string,
+): Promise<RegisterResponse> {
+  console.log('[Auth] Attempting hybrid register...');
+
+  // 1. Essayer via le backend
+  try {
+    const backendReachable = await isBackendReachable();
+    if (backendReachable) {
+      return await registerViaBackend(email, password, firstname, lastname);
+    }
+  } catch (err: any) {
+    console.warn('[Auth] Backend register failed:', err.message);
+  }
+
+  // 2. Fallback : Firebase direct
+  try {
+    return await registerFirebaseDirect(email, password, firstname, lastname);
+  } catch (err: any) {
+    console.error('[Auth] Firebase direct register failed:', err.message);
+    const msg = translateFirebaseError(err.code || err.message);
+    throw new Error(msg);
+  }
 }
 
 /**
- * Récupère le token stocké
+ * Déconnexion (local + Firebase)
+ */
+export async function logout(): Promise<void> {
+  try {
+    await firebaseSignOut(firebaseAuth);
+  } catch {
+    // Ignore Firebase signout errors
+  }
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(AUTH_MODE_KEY);
+}
+
+/**
+ * Récupère le token stocké.
+ * Si connecté via Firebase direct, rafraîchit le token automatiquement.
  */
 export function getAuthToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+/**
+ * Rafraîchit le token Firebase si nécessaire
+ */
+export async function refreshToken(): Promise<string | null> {
+  const mode = localStorage.getItem(AUTH_MODE_KEY);
+  if (mode === 'firebase-direct' && firebaseAuth.currentUser) {
+    try {
+      const newToken = await firebaseAuth.currentUser.getIdToken(true);
+      localStorage.setItem(TOKEN_KEY, newToken);
+      return newToken;
+    } catch {
+      return localStorage.getItem(TOKEN_KEY);
+    }
+  }
   return localStorage.getItem(TOKEN_KEY);
 }
 
@@ -142,33 +304,127 @@ export function isAuthenticated(): boolean {
 }
 
 /**
+ * Retourne le mode d'authentification actuel
+ */
+export function getAuthMode(): 'backend' | 'firebase-direct' | null {
+  return localStorage.getItem(AUTH_MODE_KEY) as any;
+}
+
+/**
  * Vérifie le statut de l'API (mode auth actuel)
  */
 export async function getAuthStatus(): Promise<{ authMode: string; online: boolean }> {
-  const response = await fetch(`${API_BASE}/api/auth/status`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  try {
+    const API_BASE = getBackendUrl();
+    const response = await fetch(`${API_BASE}/api/auth/status`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-  if (!response.ok) {
-    throw new Error(`Erreur ${response.status}`);
+    if (!response.ok) throw new Error(`Erreur ${response.status}`);
+    return response.json();
+  } catch {
+    // Backend pas joignable → vérifier si Firebase est connecté
+    const fbUser = firebaseAuth.currentUser;
+    return {
+      authMode: fbUser ? 'firebase-direct' : 'disconnected',
+      online: !!fbUser,
+    };
   }
-
-  return response.json();
 }
 
 /**
  * Force le rafraîchissement de la connectivité Firebase
  */
 export async function refreshConnectivity(): Promise<{ authMode: string; online: boolean }> {
-  const response = await fetch(`${API_BASE}/api/auth/refresh-connectivity`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  try {
+    const API_BASE = getBackendUrl();
+    const response = await fetch(`${API_BASE}/api/auth/refresh-connectivity`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-  if (!response.ok) {
-    throw new Error(`Erreur ${response.status}`);
+    if (!response.ok) throw new Error(`Erreur ${response.status}`);
+    return response.json();
+  } catch {
+    return {
+      authMode: firebaseAuth.currentUser ? 'firebase-direct' : 'disconnected',
+      online: !!firebaseAuth.currentUser,
+    };
+  }
+}
+
+/**
+ * Vérifie si l'utilisateur actuel est anonyme
+ */
+export function isAnonymousUser(): boolean {
+  return firebaseAuth.currentUser?.isAnonymous === true;
+}
+
+/**
+ * Assure qu'un utilisateur Firebase est connecté.
+ * Si aucun utilisateur n'est connecté, effectue un sign-in anonyme.
+ * Retourne le token d'authentification.
+ */
+export async function ensureAuthenticated(): Promise<string> {
+  // Si déjà connecté (backend ou firebase-direct), retourner le token
+  const existingToken = getAuthToken();
+  if (existingToken && firebaseAuth.currentUser) {
+    return existingToken;
   }
 
-  return response.json();
+  // Si Firebase a un utilisateur mais pas de token local, rafraîchir
+  if (firebaseAuth.currentUser) {
+    try {
+      const token = await firebaseAuth.currentUser.getIdToken(true);
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(AUTH_MODE_KEY, 'firebase-direct');
+      const user: AuthUser = {
+        uid: firebaseAuth.currentUser.uid,
+        email: firebaseAuth.currentUser.email || 'anonyme',
+      };
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      return token;
+    } catch {
+      // Continuer vers sign-in anonyme
+    }
+  }
+
+  // Sign-in anonyme
+  console.log('[Auth] Sign-in anonyme...');
+  try {
+    const cred = await signInAnonymously(firebaseAuth);
+    const token = await cred.user.getIdToken();
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(AUTH_MODE_KEY, 'firebase-direct');
+    const user: AuthUser = {
+      uid: cred.user.uid,
+      email: 'anonyme',
+      displayName: 'Visiteur',
+    };
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    console.log('[Auth] Connecté anonymement, uid:', cred.user.uid);
+    return token;
+  } catch (err: any) {
+    console.warn('[Auth] Sign-in anonyme échoué:', err.message);
+    throw new Error('Impossible de s\'authentifier. Vérifiez votre connexion.');
+  }
+}
+
+/**
+ * Traduit les codes d'erreur Firebase en messages compréhensibles
+ */
+function translateFirebaseError(code: string): string {
+  const errors: Record<string, string> = {
+    'auth/invalid-email': 'Adresse email invalide',
+    'auth/user-disabled': 'Ce compte a été désactivé',
+    'auth/user-not-found': 'Aucun compte trouvé avec cet email',
+    'auth/wrong-password': 'Mot de passe incorrect',
+    'auth/email-already-in-use': 'Cet email est déjà utilisé',
+    'auth/weak-password': 'Le mot de passe doit contenir au moins 6 caractères',
+    'auth/too-many-requests': 'Trop de tentatives, veuillez réessayer plus tard',
+    'auth/network-request-failed': 'Erreur réseau — vérifiez votre connexion internet',
+    'auth/invalid-credential': 'Email ou mot de passe incorrect',
+  };
+  return errors[code] || `Erreur d'authentification: ${code}`;
 }

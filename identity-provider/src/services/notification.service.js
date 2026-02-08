@@ -7,7 +7,7 @@ async function createNotification({ id_user, id_signalement, type, title, messag
   const query = `
     INSERT INTO notifications (id_user, id_signalement, type, title, message)
     VALUES ($1, $2, $3, $4, $5)
-    RETURNING *
+    RETURNING id_notification AS id, id_user, id_signalement, type, title, message, is_read AS "read", created_at
   `;
   const result = await db.query(query, [id_user, id_signalement, type || 'STATUS_CHANGE', title, message]);
   return result.rows[0];
@@ -19,7 +19,14 @@ async function createNotification({ id_user, id_signalement, type, title, messag
 async function getNotificationsByUser(userId, { limit = 50, unreadOnly = false } = {}) {
   let query = `
     SELECT 
-      n.*,
+      n.id_notification AS id,
+      n.id_user,
+      n.id_signalement,
+      n.type,
+      n.title,
+      n.message,
+      n.is_read AS "read",
+      n.created_at,
       s.description as signalement_description,
       ST_Y(s.geom) AS latitude,
       ST_X(s.geom) AS longitude
@@ -30,7 +37,7 @@ async function getNotificationsByUser(userId, { limit = 50, unreadOnly = false }
   const params = [userId];
 
   if (unreadOnly) {
-    query += ' AND n."read" = false';
+    query += ' AND n.is_read = false';
   }
 
   query += ' ORDER BY n.created_at DESC LIMIT $' + (params.length + 1);
@@ -45,7 +52,7 @@ async function getNotificationsByUser(userId, { limit = 50, unreadOnly = false }
  */
 async function getUnreadCount(userId) {
   const result = await db.query(
-    'SELECT COUNT(*) as count FROM notifications WHERE id_user = $1 AND "read" = false',
+    'SELECT COUNT(*) as count FROM notifications WHERE id_user = $1 AND is_read = false',
     [userId]
   );
   return parseInt(result.rows[0].count, 10);
@@ -56,7 +63,7 @@ async function getUnreadCount(userId) {
  */
 async function markAsRead(notificationId, userId) {
   const result = await db.query(
-    'UPDATE notifications SET "read" = true WHERE id = $1 AND id_user = $2 RETURNING *',
+    'UPDATE notifications SET is_read = true WHERE id_notification = $1 AND id_user = $2 RETURNING id_notification AS id, id_user, id_signalement, type, title, message, is_read AS "read", created_at',
     [notificationId, userId]
   );
   return result.rows[0];
@@ -67,7 +74,7 @@ async function markAsRead(notificationId, userId) {
  */
 async function markAllAsRead(userId) {
   const result = await db.query(
-    'UPDATE notifications SET "read" = true WHERE id_user = $1 AND "read" = false RETURNING id',
+    'UPDATE notifications SET is_read = true WHERE id_user = $1 AND is_read = false RETURNING id_notification AS id',
     [userId]
   );
   return result.rows.length;
@@ -78,8 +85,8 @@ async function markAllAsRead(userId) {
  */
 async function notifyStatusChange(signalement, oldStatus, newStatus) {
   const statusLabels = { 1: 'Nouveau', 2: 'En cours', 3: 'Terminé' };
-  const newStatusLabel = statusLabels[newStatus] || 'Inconnu';
-  const oldStatusLabel = statusLabels[oldStatus] || 'Inconnu';
+  const newStatusLabel = statusLabels[Number(newStatus)] || 'Inconnu';
+  const oldStatusLabel = statusLabels[Number(oldStatus)] || 'Inconnu';
 
   const coords = signalement.latitude && signalement.longitude
     ? `(${Number(signalement.latitude).toFixed(4)}, ${Number(signalement.longitude).toFixed(4)})`

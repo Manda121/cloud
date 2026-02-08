@@ -263,7 +263,7 @@ import {
 } from 'ionicons/icons';
 import { createSignalement, getSignalementById, getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from '../services/signalement';
 const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
-import { getAuthToken } from '../services/auth';
+import { getAuthToken, ensureAuthenticated, isAnonymousUser } from '../services/auth';
 import { takePhotoFromCamera, pickPhotoFromGallery } from '../composables/usePhotoGallery';
 import { Capacitor } from '@capacitor/core';
 import WebcamCapture from '../components/WebcamCapture.vue';
@@ -396,11 +396,13 @@ async function onSubmit() {
   errorMsg.value = null;
   loading.value = true;
 
-  const token = getAuthToken();
-  if (!token) {
-    errorMsg.value = 'Vous devez être connecté pour créer un signalement';
-    loading.value = false;
-    return;
+  // Assurer qu'un utilisateur (même anonyme) est connecté
+  let token: string | null = null;
+  try {
+    token = await ensureAuthenticated();
+  } catch {
+    // Mode totalement offline : on continue sans token
+    token = getAuthToken();
   }
 
   const localId = (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now());

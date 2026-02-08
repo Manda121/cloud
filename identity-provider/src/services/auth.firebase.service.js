@@ -124,6 +124,11 @@ async function serverSignUp(email, password, firstname = '', lastname = '') {
   const data = await res.json();
   if (!res.ok) {
     const msg = data && data.error && (data.error.message || JSON.stringify(data.error)) || 'Firebase sign-up failed';
+    // Improve guidance for API key errors
+    if (msg && msg.toLowerCase().includes('api key not valid')) {
+      console.error('[Firebase Service] Firebase REST API returned API key error. Check FIREBASE_API_KEY in .env and API key restrictions in Google Cloud Console.');
+      throw new Error('API key invalide pour Firebase (vérifier FIREBASE_API_KEY et les restrictions de la clé dans Google Cloud Console)');
+    }
     throw new Error(msg);
   }
   

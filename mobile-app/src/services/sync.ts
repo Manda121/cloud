@@ -1,0 +1,262 @@
+/**
+ * Service de synchronisation Firestore ↔ Backend (Postgres)
+ * 
+ * Fonctionnement :
+ * 1. Lit les signalements Firestore avec synced=false
+ * 2. Les envoie au backend via POST /api/signalements/sync/from-firebase
+ * 3. Marque les docs Firestore comme synced=true avec l'ID backend
+ * 
+ * Peut être déclenché manuellement (bouton) ou automatiquement
+ */
+
+import { db, auth as firebaseAuth } from './firebase';
+import { getAuthToken } from './auth';
+import { isBackendReachable, getBackendUrl } from './backend';
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  updateDoc,
+  doc,
+  addDoc,
+  serverTimestamp,
+  GeoPoint,
+  Timestamp,
+} from 'firebase/firestore';
+
+const FIRESTORE_COLLECTION = 'signalements';
+
+export interface SyncResult {
+  total: number;
+  synced: number;
+  errors: number;
+  details: Array<{
+    firestore_id: string;
+    id_signalement?: string;
+    error?: string;
+  }>;
+}
+
+/**
+ * Récupère les signalements Firestore non synchronisés
+ */
+export async function getUnsyncedFirestoreSignalements(): Promise<any[]> {
+  const user = firebaseAuth.currentUser;
+  if (!user) return [];
+
+  try {
+    const q = query(
+      collection(db, FIRESTORE_COLLECTION),
+      where('uid', '==', user.uid),
+      where('synced', '==', false),
+    );
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map((docSnap) => {
+      const d = docSnap.data();
+      return {
+        firestore_id: docSnap.id,
+        description: d.description ?? '',
+        latitude: d.latitude ?? d.location?.latitude ?? 0,
+        longitude: d.longitude ?? d.location?.longitude ?? 0,
+        surface_m2: d.surface_m2 ?? null,
+        budget: d.budget ?? null,
+        date_signalement: d.date_signalement ?? '',
+        photos: d.photos ?? [],
+        source: 'FIREBASE',
+        created_at: d.created_at instanceof Timestamp
+          ? d.created_at.toDate().toISOString()
+          : d.created_at ?? new Date().toISOString(),
+      };
+    });
+  } catch (err: any) {
+    console.error('[Sync] Erreur lecture Firestore non-synchronisés:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Synchronise les signalements Firestore → Backend (Postgres)
+ * 
+ * @returns SyncResult avec le détail de la synchronisation
+ */
+export async function syncFirestoreToBackend(): Promise<SyncResult> {
+  const result: SyncResult = { total: 0, synced: 0, errors: 0, details: [] };
+
+  // 1. Vérifier que le backend est joignable
+  const reachable = await isBackendReachable();
+  if (!reachable) {
+    throw new Error('Backend non joignable. Vérifiez que Docker est lancé ou que vous avez une connexion au serveur.');
+  }
+
+  // 2. Récupérer les signalements non synchronisés
+  const unsynced = await getUnsyncedFirestoreSignalements();
+  result.total = unsynced.length;
+
+  if (unsynced.length === 0) {
+    return result;
+  }
+
+  // 3. Envoyer au backend
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Vous devez être connecté pour synchroniser');
+  }
+
+  try {
+    const response = await fetch(`${getBackendUrl()}/api/signalements/sync/from-firebase`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ signalements: unsynced }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Erreur serveur' }));
+      throw new Error(err.error || `Erreur ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // 4. Marquer les docs Firestore comme synchronisés
+    if (data.success && Array.isArray(data.success)) {
+      for (const item of data.success) {
+        try {
+          const docRef = doc(db, FIRESTORE_COLLECTION, item.firestore_id);
+          await updateDoc(docRef, {
+            synced: true,
+            id_signalement_server: item.id_signalement,
+            synced_at: new Date().toISOString(),
+          });
+          result.synced++;
+          result.details.push({
+            firestore_id: item.firestore_id,
+            id_signalement: item.id_signalement,
+          });
+        } catch (updateErr: any) {
+          console.warn('[Sync] Erreur mise à jour Firestore doc:', item.firestore_id, updateErr.message);
+          result.errors++;
+          result.details.push({
+            firestore_id: item.firestore_id,
+            error: 'Synchronisé au backend mais erreur de mise à jour Firestore',
+          });
+        }
+      }
+    }
+
+    // 5. Compter les erreurs côté backend
+    if (data.errors && Array.isArray(data.errors)) {
+      for (const item of data.errors) {
+        result.errors++;
+        result.details.push({
+          firestore_id: item.firestore_id,
+          error: item.error,
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error('[Sync] Erreur synchronisation batch:', err.message);
+    throw err;
+  }
+
+  return result;
+}
+
+/**
+ * Compte le nombre de signalements non synchronisés
+ */
+export async function getUnsyncedCount(): Promise<number> {
+  const unsynced = await getUnsyncedFirestoreSignalements();
+  return unsynced.length;
+}
+
+/**
+ * Synchronise aussi les signalements localStorage → Firestore
+ * (pour les signalements créés en mode totalement offline)
+ */
+export async function syncLocalToFirestore(): Promise<number> {
+  const user = firebaseAuth.currentUser;
+  if (!user) return 0;
+
+  try {
+    const raw = localStorage.getItem('signalements');
+    if (!raw) return 0;
+
+    const locals: any[] = JSON.parse(raw);
+    const unsyncedLocals = locals.filter((s) => !s.synced && s.source === 'LOCAL');
+
+    if (unsyncedLocals.length === 0) return 0;
+
+    let count = 0;
+
+    for (const sig of unsyncedLocals) {
+      try {
+        await addDoc(collection(db, FIRESTORE_COLLECTION), {
+          uid: user.uid,
+          email: user.email,
+          description: sig.description ?? '',
+          latitude: sig.geom?.coordinates?.[1] ?? sig.latitude ?? 0,
+          longitude: sig.geom?.coordinates?.[0] ?? sig.longitude ?? 0,
+          location: new GeoPoint(
+            sig.geom?.coordinates?.[1] ?? sig.latitude ?? 0,
+            sig.geom?.coordinates?.[0] ?? sig.longitude ?? 0,
+          ),
+          surface_m2: sig.surface_m2 ?? null,
+          budget: sig.budget ?? null,
+          date_signalement: sig.date_signalement ?? '',
+          photos: sig.photos ?? [],
+          source: 'FIREBASE',
+          synced: false,
+          id_statut: sig.id_statut ?? 1,
+          created_at: serverTimestamp(),
+        });
+
+        // Marquer le signalement local comme synced vers Firestore
+        const idx = locals.findIndex((s) => s.id_signalement === sig.id_signalement);
+        if (idx >= 0) {
+          locals[idx].synced = true;
+          locals[idx].source = 'FIREBASE';
+        }
+        count++;
+      } catch (err: any) {
+        console.warn('[Sync] Erreur push local → Firestore:', err.message);
+      }
+    }
+
+    localStorage.setItem('signalements', JSON.stringify(locals));
+    console.log(`[Sync] ${count} signalements locaux poussés vers Firestore`);
+    return count;
+  } catch (err: any) {
+    console.error('[Sync] Erreur syncLocalToFirestore:', err.message);
+    return 0;
+  }
+}
+
+/**
+ * Synchronisation complète :
+ * 1. localStorage → Firestore (si des signalements locaux existent)
+ * 2. Firestore → Backend (si le backend est joignable)
+ */
+export async function fullSync(): Promise<{
+  localToFirestore: number;
+  firestoreToBackend: SyncResult | null;
+}> {
+  // Étape 1 : Local → Firestore
+  const localCount = await syncLocalToFirestore();
+
+  // Étape 2 : Firestore → Backend
+  let backendResult: SyncResult | null = null;
+  try {
+    backendResult = await syncFirestoreToBackend();
+  } catch (err: any) {
+    console.warn('[Sync] Backend sync skipped:', err.message);
+  }
+
+  return {
+    localToFirestore: localCount,
+    firestoreToBackend: backendResult,
+  };
+}

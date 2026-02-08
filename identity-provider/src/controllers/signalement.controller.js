@@ -71,7 +71,7 @@ exports.list = async (req, res) => {
       userId: userId ? parseInt(userId, 10) : undefined 
     });
     res.json(list);
-  } catch (e) {+
+  } catch (e) {
     console.error('[Signalements] list error:', e.message);
     res.status(500).json({ error: e.message });
   }
@@ -103,9 +103,10 @@ exports.update = async (req, res) => {
     if (!updated) return res.status(404).json({ error: 'Signalement introuvable' });
     
     // Si le statut a changé, créer une notification
-    if (req.body.id_statut && req.body.id_statut !== oldStatus) {
+    const newStatus = req.body.id_statut != null ? Number(req.body.id_statut) : null;
+    if (newStatus && newStatus !== Number(oldStatus)) {
       try {
-        await notificationService.notifyStatusChange(updated, oldStatus, req.body.id_statut);
+        await notificationService.notifyStatusChange(updated, Number(oldStatus), newStatus);
       } catch (notifErr) {
         console.warn('[Signalements] notification creation failed:', notifErr.message);
       }
@@ -214,6 +215,76 @@ exports.getUnsynced = async (req, res) => {
     res.json(list);
   } catch (e) {
     console.error('[Signalements] unsynced error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+};
+
+/**
+ * Synchroniser des signalements depuis Firebase/mobile vers Postgres
+ * Reçoit un tableau de signalements créés sur Firestore et les insère localement
+ */
+exports.syncFromFirebase = async (req, res) => {
+  try {
+    const { signalements } = req.body;
+    if (!signalements || !Array.isArray(signalements) || signalements.length === 0) {
+      return res.status(400).json({ error: 'signalements (array non vide) requis' });
+    }
+
+    const results = { success: [], errors: [] };
+
+    for (const sig of signalements) {
+      try {
+        const body = { ...sig };
+
+        // Attacher l'utilisateur courant
+        if (!body.id_user && req.user) {
+          if (req.user.id) {
+            body.id_user = req.user.id;
+          } else if (req.user.uid) {
+            let localUser = await localAuth.findByFirebaseUid(req.user.uid);
+            if (!localUser) {
+              localUser = await firebaseAuth.saveUserToLocalDb({
+                uid: req.user.uid,
+                email: req.user.email,
+                password: null,
+                firstname: req.user.name?.split(' ')[0] || '',
+                lastname: req.user.name?.split(' ').slice(1).join(' ') || '',
+              });
+            }
+            if (localUser && localUser.id) {
+              body.id_user = localUser.id;
+            }
+          }
+        }
+
+        // Sanitize
+        body.latitude = isFinite(Number(body.latitude)) ? Number(body.latitude) : null;
+        body.longitude = isFinite(Number(body.longitude)) ? Number(body.longitude) : null;
+        body.surface_m2 = body.surface_m2 != null && isFinite(Number(body.surface_m2)) ? Number(body.surface_m2) : null;
+        body.budget = body.budget != null && isFinite(Number(body.budget)) ? Number(body.budget) : null;
+        body.source = 'FIREBASE';
+        body.synced = true;
+
+        const created = await service.createSignalement(body);
+        results.success.push({
+          firestore_id: sig.firestore_id,
+          id_signalement: created.id_signalement,
+        });
+      } catch (innerErr) {
+        console.error('[Sync] Error for firestore_id:', sig.firestore_id, innerErr.message);
+        results.errors.push({
+          firestore_id: sig.firestore_id,
+          error: innerErr.message,
+        });
+      }
+    }
+
+    res.json({
+      message: `Synchronisé ${results.success.length}/${signalements.length} signalements`,
+      ...results,
+    });
+  } catch (e) {
+    console.error('[Signalements] syncFromFirebase error:', e.message);
     res.status(500).json({ error: e.message });
   }
 };

@@ -53,7 +53,21 @@
                 <ion-badge color="danger" slot="end" v-if="unreadNotifCount > 0">{{ unreadNotifCount }}</ion-badge>
               </ion-item>
             </ion-menu-toggle>
+
+            <ion-menu-toggle :auto-hide="false" v-if="isLoggedIn">
+              <ion-item @click="handleSync" class="menu-item" :disabled="syncing">
+                <ion-icon :icon="syncOutline" slot="start"></ion-icon>
+                <ion-label>{{ syncing ? 'Synchronisation...' : 'Synchroniser' }}</ion-label>
+                <ion-badge color="warning" slot="end" v-if="unsyncedCount > 0">{{ unsyncedCount }}</ion-badge>
+                <ion-spinner v-if="syncing" name="crescent" slot="end" style="width:20px;height:20px"></ion-spinner>
+              </ion-item>
+            </ion-menu-toggle>
           </ion-list>
+
+          <div v-if="syncMessage" class="sync-message" :class="syncMessageType">
+            <ion-icon :icon="syncMessageType === 'success' ? checkmarkCircleOutline : alertCircleOutline"></ion-icon>
+            {{ syncMessage }}
+          </div>
 
           <div class="menu-divider"></div>
           <div class="menu-section-label">COMPTE</div>
@@ -96,26 +110,38 @@ import { useRouter } from 'vue-router';
 import {
   IonApp, IonRouterOutlet, IonSplitPane, IonMenu, IonHeader, IonToolbar,
   IonTitle, IonContent, IonList, IonItem, IonIcon, IonLabel, IonMenuToggle,
-  IonBadge, IonAvatar
+  IonBadge, IonAvatar, IonSpinner
 } from '@ionic/vue';
 import {
   mapOutline, listOutline, logInOutline, logOutOutline, constructOutline,
-  notificationsOutline
+  notificationsOutline, syncOutline, checkmarkCircleOutline, alertCircleOutline
 } from 'ionicons/icons';
-import { isAuthenticated, getCurrentUser, logout, AuthUser } from './services/auth';
+import { isAuthenticated, getCurrentUser, logout, AuthUser, ensureAuthenticated, isAnonymousUser } from './services/auth';
 import { getSignalements } from './services/signalement';
 import { getUnreadCount } from './services/notification';
+import { fullSync, getUnsyncedCount } from './services/sync';
 
 const router = useRouter();
 const isLoggedIn = ref(false);
 const currentUser = ref<AuthUser | null>(null);
 const signalementCount = ref(0);
 const unreadNotifCount = ref(0);
+const unsyncedCount = ref(0);
+const syncing = ref(false);
+const syncMessage = ref('');
+const syncMessageType = ref<'success' | 'error'>('success');
 
-onMounted(() => {
+onMounted(async () => {
+  // Auto-auth anonyme si personne n'est connecté
+  try {
+    await ensureAuthenticated();
+  } catch (err) {
+    console.warn('[App] Auto-auth failed (offline?):', err);
+  }
   checkAuth();
   loadSignalementCount();
   loadUnreadNotifCount();
+  loadUnsyncedCount();
 });
 
 // Watch for route changes to update auth state
@@ -157,11 +183,48 @@ async function loadUnreadNotifCount() {
   }
 }
 
+async function loadUnsyncedCount() {
+  if (!isAuthenticated()) {
+    unsyncedCount.value = 0;
+    return;
+  }
+  try {
+    unsyncedCount.value = await getUnsyncedCount();
+  } catch {
+    unsyncedCount.value = 0;
+  }
+}
+
+async function handleSync() {
+  syncing.value = true;
+  syncMessage.value = '';
+  try {
+    const result = await fullSync();
+    const totalSynced = (result.firestoreToBackend?.synced ?? 0) + result.localToFirestore;
+    if (totalSynced > 0) {
+      syncMessage.value = `${totalSynced} signalement(s) synchronisé(s) !`;
+      syncMessageType.value = 'success';
+    } else {
+      syncMessage.value = 'Tout est déjà à jour';
+      syncMessageType.value = 'success';
+    }
+    await loadUnsyncedCount();
+    await loadSignalementCount();
+  } catch (err: any) {
+    syncMessage.value = err.message || 'Erreur de synchronisation';
+    syncMessageType.value = 'error';
+  } finally {
+    syncing.value = false;
+    setTimeout(() => { syncMessage.value = ''; }, 5000);
+  }
+}
+
 function handleLogout() {
-  logout();
+  logout().catch(() => {}); // async logout (Firebase + local)
   isLoggedIn.value = false;
   currentUser.value = null;
   unreadNotifCount.value = 0;
+  unsyncedCount.value = 0;
   router.push('/login');
 }
 
@@ -540,6 +603,43 @@ ion-router-outlet {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(102, 126, 234, 0.4);
+}
+
+/* ============================
+   SYNC MESSAGE STYLING
+   ============================ */
+.sync-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  animation: fadeIn 0.3s ease;
+}
+
+.sync-message.success {
+  background: #f0fff4;
+  color: #22543d;
+  border: 1px solid #c6f6d5;
+}
+
+.sync-message.error {
+  background: #fff5f5;
+  color: #c53030;
+  border: 1px solid #feb2b2;
+}
+
+.sync-message ion-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>
 

@@ -1,11 +1,10 @@
 /**
- * Service de gestion des notifications
- * Appelle l'API identity-provider avec authentification
+ * Service de gestion des notifications - MODE HYBRIDE
+ * Appelle l'API identity-provider si disponible, sinon fallback silencieux
  */
 
 import { getAuthToken } from './auth';
-
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
+import { isBackendReachable, getBackendUrl } from './backend';
 
 export interface Notification {
   id: number;
@@ -32,44 +31,48 @@ function getAuthHeaders(): HeadersInit {
  * Récupérer les notifications
  */
 export async function getNotifications(options?: { unread?: boolean; limit?: number }): Promise<Notification[]> {
+  // Vérifier si le backend est joignable d'abord
+  const reachable = await isBackendReachable();
+  if (!reachable) {
+    console.log('[NotificationService] Backend non joignable, notifications indisponibles');
+    return [];
+  }
+
   const params = new URLSearchParams();
   if (options?.unread) params.append('unread', 'true');
   if (options?.limit) params.append('limit', String(options.limit));
 
-  const url = `${API_BASE}/api/notifications${params.toString() ? '?' + params : ''}`;
+  const url = `${getBackendUrl()}/api/notifications${params.toString() ? '?' + params : ''}`;
   console.log('[NotificationService] GET', url);
   const headers = getAuthHeaders();
-  console.log('[NotificationService] Headers:', JSON.stringify(headers));
   const response = await fetch(url, { method: 'GET', headers });
-  console.log('[NotificationService] Response status:', response.status);
   if (!response.ok) {
     const errorBody = await response.text();
     console.error('[NotificationService] Error body:', errorBody);
     throw new Error(`Erreur ${response.status}: ${errorBody}`);
   }
-  const data = await response.json();
-  console.log('[NotificationService] Data:', data);
-  return data;
+  return response.json();
 }
 
 /**
  * Compter les notifications non lues
  */
 export async function getUnreadCount(): Promise<number> {
-  const url = `${API_BASE}/api/notifications/unread-count`;
-  console.log('[NotificationService] getUnreadCount GET', url);
+  // Vérifier si le backend est joignable
+  const reachable = await isBackendReachable();
+  if (!reachable) {
+    return 0;
+  }
+
+  const url = `${getBackendUrl()}/api/notifications/unread-count`;
   const response = await fetch(url, {
     method: 'GET',
     headers: getAuthHeaders(),
   });
-  console.log('[NotificationService] getUnreadCount status:', response.status);
   if (!response.ok) {
-    const errorBody = await response.text();
-    console.error('[NotificationService] getUnreadCount error:', errorBody);
-    throw new Error(`Erreur ${response.status}: ${errorBody}`);
+    return 0;
   }
   const data = await response.json();
-  console.log('[NotificationService] getUnreadCount data:', data);
   return data.count;
 }
 
@@ -77,7 +80,7 @@ export async function getUnreadCount(): Promise<number> {
  * Marquer une notification comme lue
  */
 export async function markNotificationAsRead(id: number): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/notifications/${id}/read`, {
+  const response = await fetch(`${getBackendUrl()}/api/notifications/${id}/read`, {
     method: 'PUT',
     headers: getAuthHeaders(),
   });
@@ -88,7 +91,7 @@ export async function markNotificationAsRead(id: number): Promise<void> {
  * Marquer toutes les notifications comme lues
  */
 export async function markAllNotificationsAsRead(): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/notifications/mark-all-read`, {
+  const response = await fetch(`${getBackendUrl()}/api/notifications/mark-all-read`, {
     method: 'POST',
     headers: getAuthHeaders(),
   });

@@ -184,6 +184,7 @@ import {
 } from 'ionicons/icons';
 import { getSignalements, getSignalementsStats, Signalement } from '../services/signalement';
 import { getAuthToken } from '../services/auth';
+import { getBackendUrl } from '../services/backend';
 
 const router = useRouter();
 
@@ -196,8 +197,6 @@ const saving = ref(false);
 const deleteAlertOpen = ref(false);
 const signalementToDelete = ref<Signalement | null>(null);
 const toast = ref({ show: false, message: '', color: 'success' });
-
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
 
 const deleteAlertButtons = [
   { text: 'Annuler', role: 'cancel' },
@@ -244,7 +243,7 @@ async function saveEdit() {
   saving.value = true;
   try {
     const token = getAuthToken();
-    const response = await fetch(`${API_BASE}/api/signalements/${editingSignalement.value.id_signalement}`, {
+    const response = await fetch(`${getBackendUrl()}/api/signalements/${editingSignalement.value.id_signalement}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -254,7 +253,7 @@ async function saveEdit() {
         description: editingSignalement.value.description,
         surface_m2: editingSignalement.value.surface_m2,
         budget: editingSignalement.value.budget,
-        id_statut: editingSignalement.value.id_statut
+        id_statut: Number(editingSignalement.value.id_statut)
       })
     });
     if (!response.ok) throw new Error('Erreur lors de la mise à jour');
@@ -279,7 +278,7 @@ async function deleteSignalement() {
   if (!signalementToDelete.value) return;
   try {
     const token = getAuthToken();
-    const response = await fetch(`${API_BASE}/api/signalements/${signalementToDelete.value.id_signalement}`, {
+    const response = await fetch(`${getBackendUrl()}/api/signalements/${signalementToDelete.value.id_signalement}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -314,8 +313,9 @@ function formatBudget(budget: number): string {
   return budget.toLocaleString('fr-FR');
 }
 
-function getStatusLabel(id: number): string {
-  switch (id) {
+function getStatusLabel(id: number | string): string {
+  const numId = Number(id);
+  switch (numId) {
     case 1: return 'Nouveau';
     case 2: return 'En cours';
     case 3: return 'Terminé';
@@ -323,8 +323,9 @@ function getStatusLabel(id: number): string {
   }
 }
 
-function getStatusColor(id: number): string {
-  switch (id) {
+function getStatusColor(id: number | string): string {
+  const numId = Number(id);
+  switch (numId) {
     case 1: return 'warning';
     case 2: return 'primary';
     case 3: return 'success';
@@ -332,8 +333,9 @@ function getStatusColor(id: number): string {
   }
 }
 
-function getStatusClass(id: number): string {
-  switch (id) {
+function getStatusClass(id: number | string): string {
+  const numId = Number(id);
+  switch (numId) {
     case 1: return 'status-nouveau';
     case 2: return 'status-encours';
     case 3: return 'status-termine';

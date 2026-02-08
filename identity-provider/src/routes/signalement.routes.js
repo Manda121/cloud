@@ -292,6 +292,51 @@ router.get('/sync/unsynced', ctrl.getUnsynced);
  */
 router.post('/sync/mark', ctrl.markSynced);
 
+/**
+ * @swagger
+ * /api/signalements/sync/from-firebase:
+ *   post:
+ *     summary: Synchroniser des signalements depuis Firebase/mobile vers Postgres
+ *     description: Reçoit un tableau de signalements créés sur mobile (via Firestore) et les insère dans Postgres
+ *     tags: [Signalements - Sync]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               signalements:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     firestore_id:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     latitude:
+ *                       type: number
+ *                     longitude:
+ *                       type: number
+ *                     surface_m2:
+ *                       type: number
+ *                     budget:
+ *                       type: number
+ *                     date_signalement:
+ *                       type: string
+ *                     photos:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *     responses:
+ *       200:
+ *         description: Résultat de la synchronisation
+ */
+router.post('/sync/from-firebase', ctrl.syncFromFirebase);
+
 // =============================================
 // ROUTES CRUD GÉNÉRIQUES
 // =============================================
