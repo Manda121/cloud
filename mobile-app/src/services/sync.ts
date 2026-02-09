@@ -547,30 +547,50 @@ export async function fullSync(useBackendToo: boolean = true): Promise<FullSyncR
   try {
     // Étape 1 : Upload photos vers Firebase Storage
     console.log('[Sync] Étape 1/3 : Upload des photos...');
-    const photoResult = await syncAllPhotos();
-    result.photosUploaded = photoResult.uploaded.length;
-    result.photosFailed = photoResult.failed.length;
-    if (photoResult.failed.length > 0) {
-      result.errors.push(`${photoResult.failed.length} photo(s) non uploadée(s)`);
+    try {
+      const photoResult = await syncAllPhotos();
+      console.log('[Sync] ✅ Étape 1 terminée:', photoResult);
+      result.photosUploaded = photoResult.uploaded.length;
+      result.photosFailed = photoResult.failed.length;
+      if (photoResult.failed.length > 0) {
+        result.errors.push(`${photoResult.failed.length} photo(s) non uploadée(s)`);
+      }
+    } catch (photoErr: any) {
+      console.error('[Sync] ❌ Étape 1 échouée:', photoErr);
+      result.errors.push(`Photos: ${photoErr.message}`);
     }
 
     // Étape 2 : Push signalements locaux → Firestore
     console.log('[Sync] Étape 2/3 : Push signalements vers Firestore...');
-    const pushResult = await pushLocalToFirestore();
-    result.signalementsPushed = pushResult.pushed.length;
-    if (pushResult.failed.length > 0) {
-      result.errors.push(...pushResult.failed.map((f) => `Push échec: ${f.id}`));
+    try {
+      const pushResult = await pushLocalToFirestore();
+      console.log('[Sync] ✅ Étape 2 terminée:', pushResult);
+      result.signalementsPushed = pushResult.pushed.length;
+      if (pushResult.failed.length > 0) {
+        result.errors.push(...pushResult.failed.map((f) => `Push échec: ${f.id}`));
+      }
+    } catch (pushErr: any) {
+      console.error('[Sync] ❌ Étape 2 échouée:', pushErr);
+      result.errors.push(`Push Firestore: ${pushErr.message}`);
     }
 
     // Étape 3 : Pull signalements Firestore → Local
     console.log('[Sync] Étape 3/3 : Pull signalements depuis Firestore...');
-    const pullResult = await pullFromFirestore();
-    result.signalementsPulled = pullResult.received.length;
+    try {
+      const pullResult = await pullFromFirestore();
+      console.log('[Sync] ✅ Étape 3 terminée:', pullResult);
+      result.signalementsPulled = pullResult.received.length;
+    } catch (pullErr: any) {
+      console.error('[Sync] ❌ Étape 3 échouée:', pullErr);
+      result.errors.push(`Pull Firestore: ${pullErr.message}`);
+    }
 
     // Optionnel : sync avec le backend API aussi (PostgreSQL)
     if (useBackendToo && navigator.onLine) {
+      console.log('[Sync] Étape 4 (optionnelle) : Sync avec backend API...');
       try {
         await triggerSync('both');
+        console.log('[Sync] ✅ Étape 4 terminée');
       } catch (e: any) {
         console.warn('[Sync] Backend sync skipped:', e.message);
         // Pas critique — la sync Firestore a fonctionné

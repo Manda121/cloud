@@ -138,15 +138,52 @@ const signalementService = {
   },
 
   // =====================================================
-  // SYNCHRONISATION (placeholder)
+  // SYNCHRONISATION FIREBASE
   // =====================================================
 
-  // Synchroniser avec Firebase (placeholder pour future implémentation)
+  // Synchroniser avec Firebase - Pull les données depuis Firestore vers PostgreSQL
   syncWithFirebase: async () => {
-    return { 
-      success: true, 
-      message: 'Synchronisation en cours de développement' 
-    };
+    try {
+      // Appeler l'API de synchronisation (pull depuis Firebase)
+      const response = await axios.get(`${config.API_AUTH_URL.replace('/api/auth', '/api/sync')}/pull`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur syncWithFirebase:', error.message);
+      throw error;
+    }
+  },
+
+  // Push les données PostgreSQL vers Firebase
+  pushToFirebase: async () => {
+    try {
+      const response = await axios.post(`${config.API_AUTH_URL.replace('/api/auth', '/api/sync')}/push`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur pushToFirebase:', error.message);
+      throw error;
+    }
+  },
+
+  // Synchronisation bidirectionnelle
+  triggerFullSync: async (direction = 'both') => {
+    try {
+      const response = await axios.post(`${config.API_AUTH_URL.replace('/api/auth', '/api/sync')}/trigger`, { direction });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur triggerFullSync:', error.message);
+      throw error;
+    }
+  },
+
+  // Statistiques de synchronisation
+  getSyncStats: async () => {
+    try {
+      const response = await axios.get(`${config.API_AUTH_URL.replace('/api/auth', '/api/sync')}/stats`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur getSyncStats:', error.message);
+      return null;
+    }
   },
 
   // =====================================================
