@@ -98,9 +98,13 @@
                 Enregistrer le changement
               </template>
             </ion-button>
-            <div v-if="statusSuccess" class="alert alert-success">
+            <div v-if="statusSuccess && !statusOfflineMsg" class="alert alert-success">
               <ion-icon :icon="checkmarkCircleOutline"></ion-icon>
               Statut mis à jour avec succès !
+            </div>
+            <div v-if="statusSuccess && statusOfflineMsg" class="alert alert-offline">
+              <ion-icon :icon="cloudOfflineOutline"></ion-icon>
+              {{ statusOfflineMsg }}
             </div>
             <div v-if="statusError" class="alert alert-error">
               <ion-icon :icon="alertCircleOutline"></ion-icon>
@@ -259,11 +263,15 @@ import {
   eyeOutline, addCircleOutline, locationOutline, calendarOutline, 
   resizeOutline, cashOutline, arrowBackOutline, documentTextOutline,
   alertCircleOutline, checkmarkCircleOutline, sendOutline, cameraOutline,
-  swapHorizontalOutline, alertOutline, timeOutline, checkmarkDoneOutline
+  swapHorizontalOutline, alertOutline, timeOutline, checkmarkDoneOutline,
+  cloudOfflineOutline
 } from 'ionicons/icons';
 import { createSignalement, getSignalementById, getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from '../services/signalement';
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
+import { getBackendUrl } from '../services/backend';
 import { getAuthToken, ensureAuthenticated, isAnonymousUser } from '../services/auth';
+import { addPendingStatusUpdate } from '../services/sync';
+import { db } from '../services/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { takePhotoFromCamera, pickPhotoFromGallery } from '../composables/usePhotoGallery';
 import { Capacitor } from '@capacitor/core';
 import WebcamCapture from '../components/WebcamCapture.vue';
@@ -292,6 +300,7 @@ const newStatusId = ref<number>(1);
 const statusUpdating = ref(false);
 const statusSuccess = ref(false);
 const statusError = ref<string | null>(null);
+const statusOfflineMsg = ref<string | null>(null);
 
 const statusOptions = [
   { id: 1, label: 'Nouveau', cssClass: 'opt-nouveau', icon: alertOutline },
@@ -376,13 +385,13 @@ function getPhotoUrl(p: any): string {
   if (typeof p === 'string') {
     if (p.startsWith('data:') || p.startsWith('http')) return p;
     // Si c'est un chemin relatif commençant par /uploads
-    if (p.startsWith('/')) return API_BASE + p;
+    if (p.startsWith('/')) return getBackendUrl() + p;
     return p;
   }
   // Objet { url, filename, ... } retourné par l'API
   if (p && p.url) {
     if (p.url.startsWith('http')) return p.url;
-    return API_BASE + p.url;
+    return getBackendUrl() + p.url;
   }
   return '';
 }
@@ -417,9 +426,10 @@ async function onSubmit() {
       type: 'Point',
       coordinates: [lng.value, lat.value]
     },
-      photos: selectedPreviews.value,
+    photos: selectedPreviews.value,
     source: 'LOCAL' as const,
     synced: false,
+    id_statut: 1, // Par défaut 'Nouveau'
     created_at: new Date().toISOString()
   };
   saveLocalSignalement(localSignalement);
@@ -438,6 +448,7 @@ async function onSubmit() {
     updateLocalSignalement(localId, {
       synced: true,
       id_signalement_server: created.id_signalement,
+      id_statut: (created.id_statut ?? 1),
     });
 
     saved.value = true;
@@ -569,8 +580,9 @@ async function updateStatus() {
       statusUpdating.value = false;
       return;
     }
-    console.log('updateStatus -> PUT', `${API_BASE}/api/signalements/${serverId}`, { id_statut: newStatusId.value });
-    const response = await fetch(`${API_BASE}/api/signalements/${serverId}`, {
+    const backendUrl = getBackendUrl();
+    console.log('updateStatus -> PUT', `${backendUrl}/api/signalements/${serverId}`, { id_statut: newStatusId.value });
+    const response = await fetch(`${backendUrl}/api/signalements/${serverId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -604,6 +616,56 @@ async function updateStatus() {
     setTimeout(() => { statusSuccess.value = false; }, 3000);
   } catch (err: any) {
     console.error('updateStatus catch:', err);
+
+    // Si le backend est indisponible mais le signalement existe dans Firestore,
+    // écrire le nouveau statut directement dans Firestore (mode offline)
+    if (sig.source === 'FIREBASE' && sig.id_signalement) {
+      try {
+        await updateDoc(doc(db, 'signalements', sig.id_signalement), { id_statut: newStatusId.value, synced: false });
+        remoteData.value.id_statut = newStatusId.value;
+        
+        // Ajouter à la file d'attente pour sync ultérieure
+        addPendingStatusUpdate({
+          signalement_id: sig.id_signalement,
+          firestore_id: sig.id_signalement,
+          new_status: newStatusId.value,
+          source: 'FIREBASE',
+        });
+        
+        statusSuccess.value = true;
+        statusOfflineMsg.value = 'Sauvegardé hors-ligne. Sera synchronisé automatiquement.';
+        // Notifier le sidebar pour rafraîchir le compteur de notifications
+        window.dispatchEvent(new CustomEvent('notifications:updated'));
+        setTimeout(() => { statusSuccess.value = false; statusOfflineMsg.value = null; }, 4000);
+        statusUpdating.value = false;
+        return;
+      } catch (dbErr: any) {
+        console.error('Failed to update Firestore fallback:', dbErr);
+      }
+    }
+    
+    // Fallback local storage pour signalements locaux
+    if (sig.source === 'LOCAL' || sig.id_signalement) {
+      try {
+        updateLocalSignalement(sig.id_signalement, { id_statut: newStatusId.value });
+        remoteData.value.id_statut = newStatusId.value;
+        
+        addPendingStatusUpdate({
+          signalement_id: sig.id_signalement,
+          new_status: newStatusId.value,
+          source: 'LOCAL',
+        });
+        
+        statusSuccess.value = true;
+        statusOfflineMsg.value = 'Sauvegardé localement. Sera synchronisé quand le serveur sera disponible.';
+        setTimeout(() => { statusSuccess.value = false; statusOfflineMsg.value = null; }, 4000);
+        statusUpdating.value = false;
+        return;
+      } catch {
+        // Continue to error
+      }
+    }
+
     statusError.value = err.message || 'Erreur inconnue';
     setTimeout(() => { statusError.value = null; }, 4000);
   } finally {
@@ -912,6 +974,12 @@ function goBack() {
   background: #f0fff4;
   color: #2f855a;
   border: 1px solid #c6f6d5;
+}
+
+.alert-offline {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
 }
 
 .action-buttons {

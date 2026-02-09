@@ -365,10 +365,21 @@ export function isAnonymousUser(): boolean {
  * Assure qu'un utilisateur Firebase est connecté.
  * Si aucun utilisateur n'est connecté, effectue un sign-in anonyme.
  * Retourne le token d'authentification.
+ * 
+ * IMPORTANT: Ne pas écraser une session backend valide avec un sign-in anonyme !
  */
 export async function ensureAuthenticated(): Promise<string> {
-  // Si déjà connecté (backend ou firebase-direct), retourner le token
   const existingToken = getAuthToken();
+  const authMode = getAuthMode();
+
+  // Si déjà connecté via backend avec un token valide, le retourner directement
+  // Ne PAS faire de sign-in anonyme qui écraserait la session !
+  if (existingToken && authMode === 'backend') {
+    console.log('[Auth] Session backend valide, token existant utilisé');
+    return existingToken;
+  }
+
+  // Si connecté via firebase-direct avec un currentUser, retourner le token
   if (existingToken && firebaseAuth.currentUser) {
     return existingToken;
   }
@@ -390,8 +401,8 @@ export async function ensureAuthenticated(): Promise<string> {
     }
   }
 
-  // Sign-in anonyme
-  console.log('[Auth] Sign-in anonyme...');
+  // Sign-in anonyme SEULEMENT si aucune session valide n'existe
+  console.log('[Auth] Aucune session valide, sign-in anonyme...');
   try {
     const cred = await signInAnonymously(firebaseAuth);
     const token = await cred.user.getIdToken();

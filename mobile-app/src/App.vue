@@ -119,7 +119,7 @@ import {
 import { isAuthenticated, getCurrentUser, logout, AuthUser, ensureAuthenticated, isAnonymousUser } from './services/auth';
 import { getSignalements } from './services/signalement';
 import { getUnreadCount } from './services/notification';
-import { fullSync, getUnsyncedCount } from './services/sync';
+import { fullSync, getUnsyncedCount, getPendingStatusUpdatesCount } from './services/sync';
 
 const router = useRouter();
 const isLoggedIn = ref(false);
@@ -129,7 +129,7 @@ const unreadNotifCount = ref(0);
 const unsyncedCount = ref(0);
 const syncing = ref(false);
 const syncMessage = ref('');
-const syncMessageType = ref<'success' | 'error'>('success');
+const syncMessageType = ref<'success' | 'error' | 'warning'>('success');
 
 onMounted(async () => {
   // Auto-auth anonyme si personne n'est connecté
@@ -200,13 +200,28 @@ async function handleSync() {
   syncMessage.value = '';
   try {
     const result = await fullSync();
-    const totalSynced = (result.firestoreToBackend?.synced ?? 0) + result.localToFirestore;
+    const fbToBackend = result.firestoreToBackend?.synced ?? 0;
+    const localToFirestore = result.localToFirestore ?? 0;
+    const statusUpdates = (result as any).statusUpdates ?? 0;
+    const totalSynced = fbToBackend + localToFirestore + statusUpdates;
+
     if (totalSynced > 0) {
-      syncMessage.value = `${totalSynced} signalement(s) synchronisé(s) !`;
+      const parts = [];
+      if (localToFirestore) parts.push(`${localToFirestore} poussés vers Firestore`);
+      if (fbToBackend) parts.push(`${fbToBackend} synchronisés vers le backend`);
+      if (statusUpdates) parts.push(`${statusUpdates} mises à jour de statut envoyées`);
+      syncMessage.value = parts.join(' • ');
       syncMessageType.value = 'success';
     } else {
-      syncMessage.value = 'Tout est déjà à jour';
-      syncMessageType.value = 'success';
+      // Vérifier s'il y a des mises à jour en attente
+      const pending = getPendingStatusUpdatesCount();
+      if (pending > 0) {
+        syncMessage.value = `Rien à synchroniser maintenant. ${pending} mise(s) à jour en attente`;
+        syncMessageType.value = 'warning';
+      } else {
+        syncMessage.value = 'Tout est déjà à jour';
+        syncMessageType.value = 'success';
+      }
     }
     await loadUnsyncedCount();
     await loadSignalementCount();
@@ -215,7 +230,7 @@ async function handleSync() {
     syncMessageType.value = 'error';
   } finally {
     syncing.value = false;
-    setTimeout(() => { syncMessage.value = ''; }, 5000);
+    setTimeout(() => { syncMessage.value = ''; }, 7000);
   }
 }
 
