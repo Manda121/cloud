@@ -10,7 +10,7 @@
  */
 
 import { db, auth as firebaseAuth } from './firebase';
-import { getAuthToken } from './auth';
+import { getAuthToken, ensureAuthenticated } from './auth';
 import { isBackendReachable, getBackendUrl } from './backend';
 import {
   collection,
@@ -42,6 +42,13 @@ export interface SyncResult {
  * Récupère les signalements Firestore non synchronisés
  */
 export async function getUnsyncedFirestoreSignalements(): Promise<any[]> {
+  // Assurer qu'un utilisateur (même anonyme) est connecté
+  try {
+    await ensureAuthenticated();
+  } catch {
+    // Si impossible de s'authentifier, retourner vide
+  }
+
   const user = firebaseAuth.currentUser;
   if (!user) return [];
 
@@ -99,9 +106,13 @@ export async function syncFirestoreToBackend(): Promise<SyncResult> {
   }
 
   // 3. Envoyer au backend
-  const token = getAuthToken();
+  let token = getAuthToken();
   if (!token) {
-    throw new Error('Vous devez être connecté pour synchroniser');
+    try {
+      token = await ensureAuthenticated();
+    } catch {
+      throw new Error('Vous devez être connecté pour synchroniser');
+    }
   }
 
   try {
@@ -178,6 +189,13 @@ export async function getUnsyncedCount(): Promise<number> {
  * (pour les signalements créés en mode totalement offline)
  */
 export async function syncLocalToFirestore(): Promise<number> {
+  // Assurer auth (anonyme si nécessaire)
+  try {
+    await ensureAuthenticated();
+  } catch {
+    // Si pas d'auth possible, on ne peut pas push vers Firestore
+  }
+
   const user = firebaseAuth.currentUser;
   if (!user) return 0;
 
