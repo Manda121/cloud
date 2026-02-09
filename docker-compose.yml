@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Docker Compose principal pour lancer tous les modules
 # Utilisation: docker-compose up -d
 
