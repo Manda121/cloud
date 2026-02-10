@@ -375,6 +375,19 @@ export async function ensureAuthenticated(): Promise<string> {
   // Si déjà connecté via backend avec un token valide, le retourner directement
   // Ne PAS faire de sign-in anonyme qui écraserait la session !
   if (existingToken && authMode === 'backend') {
+    // IMPORTANT:
+    // Même en mode backend, Firestore exige une session Firebase (request.auth).
+    // On s'assure donc d'avoir un utilisateur Firebase (anonyme) en parallèle,
+    // sans toucher au token backend stocké.
+    if (!firebaseAuth.currentUser) {
+      try {
+        const cred = await signInAnonymously(firebaseAuth);
+        console.log('[Auth] Session backend + Firebase anonyme active, uid:', cred.user.uid);
+      } catch (err: any) {
+        console.warn('[Auth] Firebase anonyme indisponible (mode backend):', err?.message ?? err);
+      }
+    }
+
     console.log('[Auth] Session backend valide, token existant utilisé');
     return existingToken;
   }

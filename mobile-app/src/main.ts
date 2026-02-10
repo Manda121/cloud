@@ -34,9 +34,19 @@ import '@ionic/vue/css/palettes/dark.system.css';
 /* Theme variables */
 import './theme/variables.css';
 
+import { logFirebaseClientDiagnostics } from './services/firebase';
+
 const app = createApp(App)
   .use(IonicVue)
   .use(router);
+
+// Diagnostics utiles pour comprendre pourquoi des écritures Firestore
+// n'apparaissent pas (projet, émulateurs, user Firebase).
+try {
+  logFirebaseClientDiagnostics();
+} catch (e) {
+  console.warn('[Diag] Firebase diagnostics failed:', e);
+}
 
 router.isReady().then(() => {
   app.mount('#app');

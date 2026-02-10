@@ -36,4 +36,12 @@ if (useEmulators) {
   console.log('[Firebase Client] Connected to local emulators');
 }
 
+export function logFirebaseClientDiagnostics(): void {
+  const useEmulatorsNow = (import.meta as any).env?.VITE_USE_FIREBASE_EMULATORS === 'true';
+  console.log('[Diag] Firebase projectId:', firebaseConfig.projectId);
+  console.log('[Diag] Firebase useEmulators:', useEmulatorsNow);
+  console.log('[Diag] Firebase auth uid:', auth.currentUser?.uid ?? null);
+  console.log('[Diag] Firebase auth isAnonymous:', auth.currentUser?.isAnonymous === true);
+}
+
 export default app;

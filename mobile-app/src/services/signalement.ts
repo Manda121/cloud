@@ -56,6 +56,8 @@ export interface Signalement {
   source: 'LOCAL' | 'FIREBASE';
   synced: boolean;
   created_at: string;
+  // Métadonnée frontend (non stockée côté backend) pour une UX plus claire
+  origin?: 'backend' | 'firestore';
 }
 
 /**
@@ -129,6 +131,7 @@ async function createSignalementFirestore(data: SignalementCreate): Promise<Sign
     source: 'FIREBASE',
     synced: false,
     created_at: new Date().toISOString(),
+    origin: 'firestore',
   };
 }
 
@@ -209,7 +212,9 @@ export async function createSignalement(data: SignalementCreate): Promise<Signal
         throw new Error(error.error || `Erreur ${response.status}`);
       }
 
-      return response.json();
+      const created = await response.json();
+      // Annoter pour l'UX (sans dépendre du schéma backend exact)
+      return { ...(created as any), origin: 'backend' } as Signalement;
     }
   } catch (err: any) {
     console.warn('[Signalement] Backend indisponible, fallback Firestore:', err.message);

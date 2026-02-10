@@ -29,6 +29,21 @@
         <p>Chargement des notifications...</p>
       </div>
 
+      <!-- Backend offline (only when no fallback notifications available) -->
+      <div v-else-if="!backendOnline && notifications.length === 0" class="empty-state">
+        <div class="empty-icon-wrapper">
+          <ion-icon :icon="cloudOfflineOutline" class="empty-icon"></ion-icon>
+        </div>
+        <h3>Notifications indisponibles hors-ligne</h3>
+        <p>
+          Le serveur n'est pas joignable. Si des notifications existent en mode offline, elles s'afficheront ici.
+          Démarrez le backend, puis appuyez sur Actualiser pour obtenir les notifications du serveur.
+        </p>
+        <p v-if="backendUrl" style="margin-top: 8px;">
+          Backend détecté : {{ backendUrl }}
+        </p>
+      </div>
+
       <!-- Empty state -->
       <div v-else-if="notifications.length === 0" class="empty-state">
         <div class="empty-icon-wrapper">
@@ -87,14 +102,18 @@ import {
 import {
   notificationsOutline, notificationsOffOutline, refreshOutline,
   checkmarkDoneOutline, locationOutline, alertCircleOutline,
-  checkmarkCircleOutline, timeOutline, arrowForwardOutline
+  checkmarkCircleOutline, timeOutline, arrowForwardOutline,
+  cloudOfflineOutline
 } from 'ionicons/icons';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, Notification } from '../services/notification';
+import { isBackendReachable, getBackendUrl } from '../services/backend';
 
 const router = useRouter();
 const notifications = ref<Notification[]>([]);
 const loading = ref(true);
 const toast = ref({ show: false, message: '', color: 'success' });
+const backendOnline = ref(true);
+const backendUrl = ref(getBackendUrl());
 
 onMounted(async () => {
   await loadNotifications();
@@ -103,7 +122,9 @@ onMounted(async () => {
 async function loadNotifications() {
   loading.value = true;
   try {
-    console.log('[Notifications] Loading notifications...');
+    backendUrl.value = getBackendUrl();
+    backendOnline.value = await isBackendReachable();
+    console.log('[Notifications] Loading notifications... (backendOnline=', backendOnline.value, ')');
     const data = await getNotifications();
     console.log('[Notifications] Received:', JSON.stringify(data));
     notifications.value = data;
@@ -117,10 +138,18 @@ async function loadNotifications() {
 
 async function refreshList() {
   await loadNotifications();
-  toast.value = { show: true, message: 'Notifications actualisées', color: 'success' };
+  toast.value = {
+    show: true,
+    message: backendOnline.value ? 'Notifications actualisées' : 'Backend indisponible',
+    color: backendOnline.value ? 'success' : 'warning'
+  };
 }
 
 async function handleNotificationClick(n: Notification) {
+  if (!backendOnline.value) {
+    toast.value = { show: true, message: 'Backend indisponible', color: 'warning' };
+    return;
+  }
   if (!n.read) {
     try {
       await markNotificationAsRead(n.id);
@@ -137,6 +166,10 @@ async function handleNotificationClick(n: Notification) {
 
 async function handleMarkAllRead() {
   try {
+    if (!backendOnline.value) {
+      toast.value = { show: true, message: 'Backend indisponible', color: 'warning' };
+      return;
+    }
     await markAllNotificationsAsRead();
     notifications.value.forEach(n => n.read = true);
     toast.value = { show: true, message: 'Toutes les notifications marquées comme lues', color: 'success' };
