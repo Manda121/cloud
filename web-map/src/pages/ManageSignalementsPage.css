@@ -2,6 +2,7 @@
   padding: 30px;
   max-width: 1400px;
   margin: 0 auto;
+  min-height: 0;
 }
 
 .page-loading {
@@ -31,6 +32,14 @@
   margin-bottom: 25px;
 }
 
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .page-header h1 {
   font-size: 24px;
   color: #333;
@@ -40,6 +49,30 @@
 .page-header p {
   color: #666;
   font-size: 14px;
+}
+
+.btn-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border: 2px solid #1a73e8;
+  border-radius: 8px;
+  background: white;
+  color: #1a73e8;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-filter:hover {
+  background: #e8f0fe;
+}
+
+.btn-filter.active {
+  background: #1a73e8;
+  color: white;
 }
 
 .message {
@@ -81,7 +114,8 @@
   background: white;
   border-radius: 12px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  overflow: auto;
+  max-height: calc(100vh - 260px);
 }
 
 .signalements-table {
@@ -102,6 +136,9 @@
   color: #333;
   font-size: 13px;
   text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .signalements-table tbody tr:hover {

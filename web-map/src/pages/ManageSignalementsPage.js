@@ -1,25 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import signalementService from '../services/signalementService';
+import { useAuth } from '../context/AuthContext';
 import config from '../config/config';
 import './ManageSignalementsPage.css';
 
 const ManageSignalementsPage = () => {
+  const { user } = useAuth();
   const [signalements, setSignalements] = useState([]);
   const [entreprises, setEntreprises] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [message, setMessage] = useState(null);
+  const [filterMine, setFilterMine] = useState(false);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [filterMine]);
 
   const loadData = async () => {
     try {
       setLoading(true);
+      const sigPromise = filterMine && user?.id
+        ? signalementService.getByUser(user.id)
+        : signalementService.getAll();
       const [sigData, entData] = await Promise.all([
-        signalementService.getAll(),
+        sigPromise,
         signalementService.getEntreprises().catch(() => [])
       ]);
       setSignalements(sigData);
@@ -88,8 +94,20 @@ const ManageSignalementsPage = () => {
   return (
     <div className="manage-signalements-page">
       <div className="page-header">
-        <h1>Gestion des signalements</h1>
-        <p>{signalements.length} signalement(s) au total</p>
+        <div className="page-header-row">
+          <div>
+            <h1>Gestion des signalements</h1>
+            <p>{signalements.length} signalement(s) {filterMine ? 'créé(s) par moi' : 'au total'}</p>
+          </div>
+          {user && (
+            <button
+              className={`btn-filter ${filterMine ? 'active' : ''}`}
+              onClick={() => setFilterMine(!filterMine)}
+            >
+              {filterMine ? '🌐 Tous les signalements' : '👤 Mes signalements'}
+            </button>
+          )}
+        </div>
       </div>
 
       {message && (

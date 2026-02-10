@@ -18,9 +18,16 @@ app.use(express.json());
 // ROUTES SIGNALEMENTS
 // =====================================================
 
-// GET - Récupérer tous les signalements
+// GET - Récupérer tous les signalements (avec filtre optionnel ?user_id=X)
 app.get('/api/signalements', async (req, res) => {
   try {
+    let whereClause = '';
+    const params = [];
+    if (req.query.user_id) {
+      params.push(parseInt(req.query.user_id, 10));
+      whereClause = 'WHERE s.id_user = $1';
+    }
+
     const result = await db.query(`
       SELECT 
         s.id_signalement,
@@ -41,8 +48,9 @@ app.get('/api/signalements', async (req, res) => {
       FROM signalements s
       LEFT JOIN statuts_signalement st ON s.id_statut = st.id_statut
       LEFT JOIN entreprises e ON s.id_entreprise = e.id_entreprise
+      ${whereClause}
       ORDER BY s.date_signalement DESC
-    `);
+    `, params);
     
     const signalements = result.rows.map(row => ({
       ...row,

@@ -22,6 +22,17 @@ const signalementService = {
     }
   },
 
+  // Récupérer les signalements d'un utilisateur spécifique
+  getByUser: async (userId) => {
+    try {
+      const response = await axios.get(`${API_URL}?user_id=${userId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur getByUser signalements:', error.message);
+      return [];
+    }
+  },
+
   // Récupérer un signalement par ID
   getById: async (id) => {
     try {
