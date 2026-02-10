@@ -1,0 +1,699 @@
+{
+  "info": {
+    "_postman_id": "cloud-identity-provider-api",
+    "name": "Identity Provider API",
+    "description": "Collection complète pour tester l'API Identity Provider - Authentification, Signalements, Notifications et Synchronisation",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testEmail",
+      "value": "ranto@example.com",
+      "type": "string"
+    },
+    {
+      "key": "testPassword",
+      "value": "rantotest",
+      "type": "string"
+    },
+    {
+      "key": "signalementId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Endpoints d'authentification",
+      "item": [
+        {
+          "name": "Register - Inscription",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.token) {",
+                  "        pm.collectionVariables.set('token', jsonData.token);",
+                  "    }",
+                  "    pm.test('Registration successful', function () {",
+                  "        pm.expect(jsonData).to.have.property('user');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\",\n  \"firstname\": \"John\",\n  \"lastname\": \"Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Inscription d'un nouvel utilisateur"
+          }
+        },
+        {
+          "name": "Login - Connexion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.token) {",
+                  "        pm.collectionVariables.set('token', jsonData.token);",
+                  "        console.log('Token saved:', jsonData.token);",
+                  "    }",
+                  "    pm.test('Login successful', function () {",
+                  "        pm.expect(jsonData).to.have.property('token');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Authentification et récupération du token JWT"
+          }
+        },
+        {
+          "name": "Unblock - Débloquer compte",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/unblock",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "unblock"]
+            },
+            "description": "Débloquer un compte utilisateur"
+          }
+        },
+        {
+          "name": "Status - Vérifier connectivité",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "status"]
+            },
+            "description": "Vérifier le statut de connectivité et le mode d'authentification (firebase/local)"
+          }
+        },
+        {
+          "name": "Refresh Connectivity",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh-connectivity",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh-connectivity"]
+            },
+            "description": "Forcer le rafraîchissement du cache de connectivité"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Signalements",
+      "description": "CRUD des signalements de routes dégradées",
+      "item": [
+        {
+          "name": "List - Liste tous les signalements",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements"]
+            },
+            "description": "Récupérer la liste de tous les signalements"
+          }
+        },
+        {
+          "name": "List by User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements?userId=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements"],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Récupérer les signalements d'un utilisateur spécifique"
+          }
+        },
+        {
+          "name": "Create - Créer signalement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.id_signalement) {",
+                  "        pm.collectionVariables.set('signalementId', jsonData.id_signalement);",
+                  "        console.log('Signalement ID saved:', jsonData.id_signalement);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Route dégradée avec nids de poule\",\n  \"latitude\": -18.8792,\n  \"longitude\": 47.5079,\n  \"surface_m2\": 50,\n  \"budget\": 200000,\n  \"source\": \"LOCAL\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements"]
+            },
+            "description": "Créer un nouveau signalement de route dégradée"
+          }
+        },
+        {
+          "name": "Create with Photos (base64)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Route très abîmée\",\n  \"latitude\": -18.9000,\n  \"longitude\": 47.5200,\n  \"surface_m2\": 100,\n  \"budget\": 500000,\n  \"source\": \"LOCAL\",\n  \"photos\": [\n    \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ...\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements"]
+            },
+            "description": "Créer un signalement avec photos en base64"
+          }
+        },
+        {
+          "name": "Get One - Récupérer par ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/{{signalementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "{{signalementId}}"]
+            },
+            "description": "Récupérer un signalement spécifique par son UUID"
+          }
+        },
+        {
+          "name": "Update - Modifier signalement",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Route réparée partiellement\",\n  \"id_statut\": 2,\n  \"surface_m2\": 30,\n  \"budget\": 150000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/{{signalementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "{{signalementId}}"]
+            },
+            "description": "Mettre à jour un signalement (statut: 1=NOUVEAU, 2=EN_COURS, 3=TERMINE)"
+          }
+        },
+        {
+          "name": "Delete - Supprimer signalement",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/{{signalementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "{{signalementId}}"]
+            },
+            "description": "Supprimer un signalement"
+          }
+        },
+        {
+          "name": "Stats - Statistiques",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "stats"]
+            },
+            "description": "Obtenir les statistiques des signalements (total, par statut, surface, budget)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Signalements - Geo",
+      "description": "Requêtes géographiques pour la carte",
+      "item": [
+        {
+          "name": "GeoJSON - Format Leaflet",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/geo/geojson",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "geo", "geojson"]
+            },
+            "description": "Récupérer tous les signalements au format GeoJSON pour Leaflet"
+          }
+        },
+        {
+          "name": "GeoJSON - Filtré par statut",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/geo/geojson?statutId=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "geo", "geojson"],
+              "query": [
+                {
+                  "key": "statutId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "GeoJSON filtré par statut (1=NOUVEAU, 2=EN_COURS, 3=TERMINE)"
+          }
+        },
+        {
+          "name": "Bbox - Bounding Box",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/geo/bbox?minLat=-19.0&minLng=47.0&maxLat=-18.5&maxLng=48.0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "geo", "bbox"],
+              "query": [
+                {
+                  "key": "minLat",
+                  "value": "-19.0"
+                },
+                {
+                  "key": "minLng",
+                  "value": "47.0"
+                },
+                {
+                  "key": "maxLat",
+                  "value": "-18.5"
+                },
+                {
+                  "key": "maxLng",
+                  "value": "48.0"
+                }
+              ]
+            },
+            "description": "Signalements dans une zone rectangulaire (bounding box)"
+          }
+        },
+        {
+          "name": "Nearby - Proximité",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/geo/nearby?lat=-18.8792&lng=47.5079&radius=5000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "geo", "nearby"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "-18.8792"
+                },
+                {
+                  "key": "lng",
+                  "value": "47.5079"
+                },
+                {
+                  "key": "radius",
+                  "value": "5000"
+                }
+              ]
+            },
+            "description": "Signalements proches d'un point (rayon en mètres)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Signalements - Sync",
+      "description": "Synchronisation mobile/Firebase",
+      "item": [
+        {
+          "name": "Get Unsynced",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/sync/unsynced",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "sync", "unsynced"]
+            },
+            "description": "Récupérer les signalements non synchronisés"
+          }
+        },
+        {
+          "name": "Mark Synced",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\"{{signalementId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/sync/mark",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "sync", "mark"]
+            },
+            "description": "Marquer des signalements comme synchronisés"
+          }
+        },
+        {
+          "name": "Sync from Firebase",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"signalements\": [\n    {\n      \"firestore_id\": \"abc123\",\n      \"description\": \"Route depuis Firebase\",\n      \"latitude\": -18.9100,\n      \"longitude\": 47.5300,\n      \"surface_m2\": 75,\n      \"budget\": 300000,\n      \"date_signalement\": \"2026-02-10\",\n      \"photos\": []\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/signalements/sync/from-firebase",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "signalements", "sync", "from-firebase"]
+            },
+            "description": "Synchroniser des signalements depuis Firebase/mobile vers PostgreSQL"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "description": "Gestion des notifications utilisateur",
+      "item": [
+        {
+          "name": "List - Liste notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications"]
+            },
+            "description": "Récupérer toutes les notifications de l'utilisateur"
+          }
+        },
+        {
+          "name": "List Unread Only",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications?unread=true&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications"],
+              "query": [
+                {
+                  "key": "unread",
+                  "value": "true"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Récupérer uniquement les notifications non lues"
+          }
+        },
+        {
+          "name": "Unread Count",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/unread-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "unread-count"]
+            },
+            "description": "Obtenir le nombre de notifications non lues"
+          }
+        },
+        {
+          "name": "Mark One as Read",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "{{notificationId}}", "read"]
+            },
+            "description": "Marquer une notification spécifique comme lue"
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/mark-all-read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "mark-all-read"]
+            },
+            "description": "Marquer toutes les notifications comme lues"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sync (Firebase)",
+      "description": "Synchronisation Firebase <-> PostgreSQL",
+      "item": [
+        {
+          "name": "Pull from Firebase",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/sync/pull",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sync", "pull"]
+            },
+            "description": "Récupérer les signalements depuis Firebase vers PostgreSQL"
+          }
+        },
+        {
+          "name": "Push to Firebase",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sync/push",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sync", "push"]
+            },
+            "description": "Pousser les signalements PostgreSQL vers Firebase"
+          }
+        },
+        {
+          "name": "Trigger Sync",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"direction\": \"both\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sync/trigger",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sync", "trigger"]
+            },
+            "description": "Déclencher une synchronisation manuelle (pull, push, ou both)"
+          }
+        },
+        {
+          "name": "Sync Stats",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/sync/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "sync", "stats"]
+            },
+            "description": "Statistiques de synchronisation"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "description": "Vérification de l'état du serveur",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "Vérifier que le serveur est en ligne"
+          }
+        },
+        {
+          "name": "Swagger Docs",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api-docs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api-docs"]
+            },
+            "description": "Documentation Swagger UI"
+          }
+        }
+      ]
+    }
+  ]
+}
