@@ -348,9 +348,9 @@ const statusOfflineMsg = ref<string | null>(null);
 //   1. Essayer de GET le prix depuis le backend
 //   2. Si OK -> stocker en localStorage pour usage hors-ligne
 //   3. Si backend indisponible -> utiliser la valeur en localStorage
-//   4. Si rien en localStorage -> utiliser la valeur par défaut (15000)
+//   4. Si rien en localStorage -> utiliser la valeur par défaut (100000)
 // =============================================
-const PRIX_M2_DEFAULT = 15000;
+const PRIX_M2_DEFAULT = 100000;
 const PRIX_M2_STORAGE_KEY = 'roadwatch_prix_m2';
 const prix_m2 = ref<number>(getSavedPrixM2());
 const loadingPrix = ref(false);
