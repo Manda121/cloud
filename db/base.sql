@@ -172,3 +172,21 @@ FROM signalements s
 LEFT JOIN statuts_signalement st ON s.id_statut = st.id_statut
 LEFT JOIN entreprises e ON s.id_entreprise = e.id_entreprise
 ORDER BY s.date_signalement DESC;
+
+-- new
+
+CREATE TABLE type_reparation(
+   id_typereparation INTEGER,
+   nom_reparation VARCHAR(50)  NOT NULL,
+   PRIMARY KEY(id_typereparation)
+);
+
+CREATE TABLE Traveaux(
+   id_traveaux INTEGER,
+   niveau_reparation INTEGER NOT NULL,
+   id_typereparation INTEGER NOT NULL,
+   id_signalement UUID DEFAULT uuid_generate_v4() NOT NULL,
+   PRIMARY KEY(id_traveaux),
+   FOREIGN KEY(id_typereparation) REFERENCES type_reparation(id_typereparation),
+   FOREIGN KEY(id_signalement) REFERENCES signalements(id_signalement)
+);
