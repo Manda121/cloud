@@ -202,33 +202,40 @@
               />
             </div>
 
-            <div class="form-row">
-              <div class="form-group half">
-                <label class="form-label">
-                  <ion-icon :icon="resizeOutline"></ion-icon>
-                  Surface (m²)
-                </label>
-                <ion-input 
-                  type="number" 
-                  v-model.number="surface_m2" 
-                  placeholder="Ex: 5"
-                  class="custom-input"
-                />
-              </div>
+            <div class="form-group">
+              <label class="form-label">
+                <ion-icon :icon="resizeOutline"></ion-icon>
+                Surface (m²)
+              </label>
+              <ion-input 
+                type="number" 
+                v-model.number="surface_m2" 
+                placeholder="Ex: 5"
+                class="custom-input"
+              />
+            </div>
 
-              <div class="form-group half">
-                <label class="form-label">
-                  <ion-icon :icon="cashOutline"></ion-icon>
-                  Coût estimé
-                </label>
-                <div class="calculated-budget">
-                  <span v-if="calculatedBudget" class="budget-value">
-                    {{ Number(calculatedBudget).toLocaleString() }} Ar
+            <div class="calculated-budget">
+              <div class="budget-header">
+                <ion-icon :icon="cashOutline"></ion-icon>
+                <span>Budget estimé (auto)</span>
+              </div>
+              <div class="budget-body">
+                <div class="budget-row">
+                  <span class="budget-label">Prix / m²</span>
+                  <span class="budget-value">
+                    <ion-spinner v-if="loadingPrix" name="crescent" class="inline-spinner"></ion-spinner>
+                    <template v-else>{{ Number(prix_m2).toLocaleString() }} Ar</template>
                   </span>
-                  <span v-else class="budget-placeholder">
-                    Entrez la surface
-                  </span>
-                  <span class="budget-hint">{{ prix_m2.toLocaleString() }} Ar/m²</span>
+                </div>
+                <div class="budget-row">
+                  <span class="budget-label">Total</span>
+                  <span v-if="calculatedBudget !== null" class="budget-value">{{ Number(calculatedBudget).toLocaleString() }} Ar</span>
+                  <span v-else class="budget-placeholder">Renseignez la surface</span>
+                </div>
+                <div class="budget-hint">
+                  <ion-icon :icon="informationCircleOutline"></ion-icon>
+                  <span>Calcul: surface × prix/m²</span>
                 </div>
               </div>
             </div>
