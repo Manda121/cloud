@@ -5,6 +5,18 @@ const db = require('./db');
 const app = express();
 const PORT = process.env.SERVER_PORT || 3002;
 
+// Migration: ajouter la colonne id_firestore si elle n'existe pas
+const ensureSchema = async () => {
+  try {
+    await db.query(`ALTER TABLE signalements ADD COLUMN IF NOT EXISTS id_firestore TEXT`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_signalements_firestore ON signalements(id_firestore)`);
+    console.log('[DB] Schema sync OK (colonne id_firestore vérifiée)');
+  } catch (e) {
+    console.log('[DB] Schema check:', e.message);
+  }
+};
+ensureSchema();
+
 // Middleware
 app.use(cors({
   origin: ['http://localhost:3001', 'http://localhost:3002', 'http://localhost'],
@@ -260,12 +272,40 @@ app.post('/api/sync/pull', async (req, res) => {
 
     for (const data of signalements) {
       const id_firestore = data.id_firestore || data.id;
+      if (!id_firestore) {
+        results.skipped.push('no-id');
+        continue;
+      }
+
       try {
-        // Vérifier si le signalement existe déjà (par id_firestore stocké dans source_id ou par id_signalement)
+        // Vérifier si le signalement existe déjà par son ID Firestore (TEXT, pas UUID)
         const existing = await db.query(
-          'SELECT id_signalement FROM signalements WHERE id_signalement = $1',
-          [data.id_signalement || id_firestore]
+          'SELECT id_signalement FROM signalements WHERE id_firestore = $1',
+          [id_firestore]
         );
+
+        // Résoudre id_user : chercher par firebase_uid ou par id_user (UUID)
+        let id_user = null;
+        const uid = data.id_user || data.uid;
+        if (uid) {
+          // Vérifier si c'est un UUID valide (id_user direct)
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (uuidRegex.test(uid)) {
+            id_user = uid;
+          } else {
+            // Sinon chercher par firebase_uid
+            const userResult = await db.query(
+              'SELECT id_user FROM users WHERE firebase_uid = $1',
+              [uid]
+            );
+            if (userResult.rows.length > 0) {
+              id_user = userResult.rows[0].id_user;
+            }
+          }
+        }
+
+        const lng = data.longitude || null;
+        const lat = data.latitude || null;
 
         if (existing.rows.length > 0) {
           // Mise à jour
@@ -280,45 +320,47 @@ app.post('/api/sync/pull', async (req, res) => {
                 THEN ST_SetSRID(ST_MakePoint($6, $7), 4326)
                 ELSE geom
               END,
+              id_statut = COALESCE($8, id_statut),
               source = 'FIREBASE',
               synced = true
-            WHERE id_signalement = $1
+            WHERE id_firestore = $1
           `, [
-            data.id_signalement || id_firestore,
+            id_firestore,
             data.description || null,
             data.surface_m2 || null,
             data.budget || null,
             data.date_signalement || null,
-            data.longitude || null,
-            data.latitude || null
+            lng, lat,
+            data.id_statut || null
           ]);
-          results.updated.push(data.id_signalement || id_firestore);
+          results.updated.push(id_firestore);
         } else {
-          // Insertion
-          await db.query(`
+          // Insertion (nouveau UUID auto-généré, id_firestore stocké)
+          const insertResult = await db.query(`
             INSERT INTO signalements (
-              id_user, id_statut, description, 
+              id_firestore, id_user, id_statut, description, 
               surface_m2, budget, date_signalement, geom, source, synced
             ) VALUES (
-              $1, $2, $3, $4, $5, $6,
+              $1, $2::uuid, $3, $4, $5, $6, $7,
               CASE 
-                WHEN $7::numeric IS NOT NULL AND $8::numeric IS NOT NULL 
-                THEN ST_SetSRID(ST_MakePoint($7, $8), 4326)
+                WHEN $8::numeric IS NOT NULL AND $9::numeric IS NOT NULL 
+                THEN ST_SetSRID(ST_MakePoint($8, $9), 4326)
                 ELSE NULL
               END,
               'FIREBASE', true
             )
             RETURNING id_signalement
           `, [
-            data.id_user || null,
+            id_firestore,
+            id_user,
             data.id_statut || 1,
             data.description || 'Signalement depuis Firestore',
             data.surface_m2 || null,
             data.budget || null,
             data.date_signalement || new Date().toISOString().split('T')[0],
-            data.longitude || null,
-            data.latitude || null
+            lng, lat
           ]);
+          console.log(`[Sync] Créé: ${id_firestore} → ${insertResult.rows[0].id_signalement}`);
           results.created.push(id_firestore);
         }
       } catch (err) {
@@ -327,7 +369,7 @@ app.post('/api/sync/pull', async (req, res) => {
       }
     }
 
-    console.log('[Sync] Pull terminé:', results);
+    console.log(`[Sync] Pull terminé: ${results.created.length} créés, ${results.updated.length} MAJ, ${results.errors.length} erreurs`);
     res.json({
       success: true,
       message: `Pull terminé: ${results.created.length} créés, ${results.updated.length} mis à jour`,
@@ -344,22 +386,27 @@ app.get('/api/sync/unsynced', async (req, res) => {
   try {
     const result = await db.query(`
       SELECT 
-        id_signalement,
-        id_user,
-        id_statut,
-        description,
-        surface_m2,
-        budget,
-        date_signalement,
-        ST_X(geom) AS longitude,
-        ST_Y(geom) AS latitude,
-        source,
-        synced,
-        created_at
-      FROM signalements
-      WHERE synced = false OR source = 'LOCAL'
+        s.id_signalement,
+        s.id_firestore,
+        s.id_user,
+        u.firebase_uid,
+        s.id_statut,
+        s.description,
+        s.surface_m2,
+        s.budget,
+        s.date_signalement,
+        ST_X(s.geom) AS longitude,
+        ST_Y(s.geom) AS latitude,
+        s.source,
+        s.synced,
+        s.created_at
+      FROM signalements s
+      LEFT JOIN users u ON s.id_user = u.id_user
+      WHERE s.id_firestore IS NULL
+        AND s.geom IS NOT NULL
     `);
 
+    console.log(`[Sync] ${result.rows.length} signalements locaux à pousser vers Firestore`);
     res.json({ success: true, signalements: result.rows });
   } catch (e) {
     console.error('[Sync] Erreur unsynced:', e.message);
@@ -370,19 +417,26 @@ app.get('/api/sync/unsynced', async (req, res) => {
 // POST /api/sync/mark-synced - Marquer des signalements comme synchronisés
 app.post('/api/sync/mark-synced', async (req, res) => {
   try {
-    const { ids } = req.body;
+    const { items } = req.body;
 
-    if (!Array.isArray(ids) || ids.length === 0) {
+    // items = [{ id_signalement: uuid, id_firestore: string }, ...]
+    if (!Array.isArray(items) || items.length === 0) {
       return res.json({ success: true, updated: 0 });
     }
 
-    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
-    const result = await db.query(
-      `UPDATE signalements SET synced = true WHERE id_signalement IN (${placeholders}) RETURNING id_signalement`,
-      ids
-    );
+    let updated = 0;
+    for (const item of items) {
+      const result = await db.query(
+        `UPDATE signalements SET synced = true, id_firestore = COALESCE($2, id_firestore)
+         WHERE id_signalement = $1
+         RETURNING id_signalement`,
+        [item.id_signalement, item.id_firestore || null]
+      );
+      updated += result.rows.length;
+    }
 
-    res.json({ success: true, updated: result.rows.length });
+    console.log(`[Sync] ${updated} signalements marqués comme synchronisés`);
+    res.json({ success: true, updated });
   } catch (e) {
     console.error('[Sync] Erreur mark-synced:', e.message);
     res.status(500).json({ success: false, error: e.message });

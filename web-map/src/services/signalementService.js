@@ -191,27 +191,45 @@ const signalementService = {
       // 2. Écrire chaque signalement dans Firestore (miranto-mobile)
       for (const sig of unsyncedList) {
         try {
-          await firestoreService.createWithId(String(sig.id_signalement), {
-            id_signalement: sig.id_signalement,
+          const firestoreData = {
+            id_local: sig.id_signalement,
+            uid: sig.firebase_uid || null,
             id_user: sig.id_user,
             id_statut: sig.id_statut,
-            description: sig.description,
+            description: sig.description || '',
             surface_m2: sig.surface_m2,
             budget: sig.budget,
             date_signalement: sig.date_signalement,
             longitude: sig.longitude,
-            latitude: sig.latitude
-          });
-          results.pushed.push(sig.id_signalement);
+            latitude: sig.latitude,
+            source: 'LOCAL',
+            synced: true,
+            synced_at: new Date().toISOString()
+          };
+
+          let firestoreId = sig.id_firestore;
+
+          if (firestoreId) {
+            // Mise à jour d'un doc Firestore existant
+            await firestoreService.update(firestoreId, firestoreData);
+            console.log(`[Sync] MAJ Firestore: ${firestoreId}`);
+          } else {
+            // Création d'un nouveau doc dans Firestore
+            const created = await firestoreService.create(firestoreData);
+            firestoreId = created?.id || null;
+            console.log(`[Sync] Créé dans Firestore: ${firestoreId}`);
+          }
+
+          results.pushed.push({ id_signalement: sig.id_signalement, id_firestore: firestoreId });
         } catch (err) {
           console.error(`[Sync] Erreur push signalement ${sig.id_signalement}:`, err.message);
           results.failed.push(sig.id_signalement);
         }
       }
 
-      // 3. Marquer les signalements poussés comme synchronisés dans PostgreSQL
+      // 3. Marquer les signalements poussés comme synchronisés + stocker l'id_firestore
       if (results.pushed.length > 0) {
-        await axios.post(`${SYNC_URL}/mark-synced`, { ids: results.pushed });
+        await axios.post(`${SYNC_URL}/mark-synced`, { items: results.pushed });
       }
 
       return {

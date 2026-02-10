@@ -29,6 +29,7 @@ const isOnline = () => {
 const toFirestoreFormat = (signalement) => {
   return {
     id_local: signalement.id_signalement || null,
+    uid: signalement.uid || signalement.id_user || null,
     id_user: signalement.id_user || null,
     id_statut: signalement.id_statut || 1,
     id_entreprise: signalement.id_entreprise || null,
@@ -38,7 +39,7 @@ const toFirestoreFormat = (signalement) => {
     date_signalement: signalement.date_signalement || new Date().toISOString().split('T')[0],
     longitude: signalement.longitude || (signalement.geom?.coordinates?.[0]) || null,
     latitude: signalement.latitude || (signalement.geom?.coordinates?.[1]) || null,
-    source: 'FIREBASE',
+    source: signalement.source || 'FIREBASE',
     synced: true,
     created_at: signalement.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -47,28 +48,39 @@ const toFirestoreFormat = (signalement) => {
 
 /**
  * Convertit un document Firestore en format local
+ * Gère les données venant du mobile-app (uid, location GeoPoint) et du web-map
  */
 const fromFirestoreFormat = (docSnapshot) => {
   const data = docSnapshot.data();
+
+  // Résoudre les coordonnées (le mobile utilise un GeoPoint 'location' ou latitude/longitude)
+  let lng = data.longitude || null;
+  let lat = data.latitude || null;
+  if (data.location && typeof data.location.latitude === 'number') {
+    lat = data.location.latitude;
+    lng = data.location.longitude;
+  }
+
+  // Résoudre l'identifiant utilisateur (mobile = uid, web = id_user)
+  const uid = data.uid || data.id_user || null;
+
   return {
     id_firestore: docSnapshot.id,
-    id_signalement: data.id_local || docSnapshot.id,
-    id_user: data.id_user,
-    id_statut: data.id_statut || 1,
-    id_entreprise: data.id_entreprise,
-    description: data.description,
-    surface_m2: data.surface_m2,
-    budget: data.budget,
-    date_signalement: data.date_signalement,
-    longitude: data.longitude,
-    latitude: data.latitude,
-    geom: data.longitude && data.latitude ? {
-      coordinates: [data.longitude, data.latitude]
-    } : null,
-    source: data.source || 'FIREBASE',
+    id_user: uid,
+    uid: uid,
+    id_statut: data.id_statut || data.statut || 1,
+    id_entreprise: data.id_entreprise || null,
+    description: data.description || '',
+    surface_m2: data.surface_m2 || null,
+    budget: data.budget || null,
+    date_signalement: data.date_signalement || null,
+    longitude: lng,
+    latitude: lat,
+    geom: lng && lat ? { coordinates: [lng, lat] } : null,
+    source: 'FIREBASE',
     synced: true,
-    created_at: data.created_at,
-    updated_at: data.updated_at
+    created_at: data.created_at || null,
+    updated_at: data.updated_at || null
   };
 };
 
