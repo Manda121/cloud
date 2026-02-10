@@ -1,7 +1,7 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { 
-  initializeFirestore,
+  getFirestore,
   collection, 
   doc, 
   getDocs, 
@@ -14,21 +14,21 @@ import {
   setDoc 
 } from "firebase/firestore";
 
-// Your web app's Firebase configuration
+// Firebase configuration - même projet que le mobile-app (miranto-mobile)
 const firebaseConfig = {
-  apiKey: "AIzaSyDJQ_YkUxSUdeHNJb--hQFSnLuu2F_qoOc",
-  authDomain: "base-tp-cloud.firebaseapp.com",
-  projectId: "base-tp-cloud",
-  storageBucket: "base-tp-cloud.firebasestorage.app",
-  messagingSenderId: "369648817817",
-  appId: "1:369648817817:web:3c3072369fa6b94dd94a08"
+  apiKey: "AIzaSyDSanU3YjNWDby7zWphZZW2O8f2nBxF67Y",
+  authDomain: "miranto-mobile.firebaseapp.com",
+  projectId: "miranto-mobile",
+  storageBucket: "miranto-mobile.firebasestorage.app",
+  messagingSenderId: "561744947732",
+  appId: "1:561744947732:web:d2bb551e7c825f2fb15501"
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore avec la base de données "tp-cloud"
-const db = initializeFirestore(app, {}, 'tp-cloud');
+// Initialize Firestore - base de données par défaut (même que mobile-app)
+const db = getFirestore(app);
 
 // Collection de signalements
 const SIGNALEMENTS_COLLECTION = 'signalements';

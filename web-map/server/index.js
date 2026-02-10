@@ -243,6 +243,173 @@ app.delete('/api/signalements/:id', async (req, res) => {
 });
 
 // =====================================================
+// ROUTES SYNCHRONISATION FIRESTORE <-> POSTGRESQL
+// (Le frontend lit/écrit Firestore, le backend gère PostgreSQL)
+// =====================================================
+
+// POST /api/sync/pull - Reçoit les données Firestore du frontend, upsert dans PostgreSQL
+app.post('/api/sync/pull', async (req, res) => {
+  try {
+    const { signalements } = req.body;
+
+    if (!Array.isArray(signalements)) {
+      return res.status(400).json({ success: false, error: 'signalements doit être un tableau' });
+    }
+
+    const results = { created: [], updated: [], skipped: [], errors: [] };
+
+    for (const data of signalements) {
+      const id_firestore = data.id_firestore || data.id;
+      try {
+        // Vérifier si le signalement existe déjà (par id_firestore stocké dans source_id ou par id_signalement)
+        const existing = await db.query(
+          'SELECT id_signalement FROM signalements WHERE id_signalement = $1',
+          [data.id_signalement || id_firestore]
+        );
+
+        if (existing.rows.length > 0) {
+          // Mise à jour
+          await db.query(`
+            UPDATE signalements SET
+              description = COALESCE($2, description),
+              surface_m2 = COALESCE($3, surface_m2),
+              budget = COALESCE($4, budget),
+              date_signalement = COALESCE($5, date_signalement),
+              geom = CASE 
+                WHEN $6::numeric IS NOT NULL AND $7::numeric IS NOT NULL 
+                THEN ST_SetSRID(ST_MakePoint($6, $7), 4326)
+                ELSE geom
+              END,
+              source = 'FIREBASE',
+              synced = true
+            WHERE id_signalement = $1
+          `, [
+            data.id_signalement || id_firestore,
+            data.description || null,
+            data.surface_m2 || null,
+            data.budget || null,
+            data.date_signalement || null,
+            data.longitude || null,
+            data.latitude || null
+          ]);
+          results.updated.push(data.id_signalement || id_firestore);
+        } else {
+          // Insertion
+          await db.query(`
+            INSERT INTO signalements (
+              id_user, id_statut, description, 
+              surface_m2, budget, date_signalement, geom, source, synced
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6,
+              CASE 
+                WHEN $7::numeric IS NOT NULL AND $8::numeric IS NOT NULL 
+                THEN ST_SetSRID(ST_MakePoint($7, $8), 4326)
+                ELSE NULL
+              END,
+              'FIREBASE', true
+            )
+            RETURNING id_signalement
+          `, [
+            data.id_user || null,
+            data.id_statut || 1,
+            data.description || 'Signalement depuis Firestore',
+            data.surface_m2 || null,
+            data.budget || null,
+            data.date_signalement || new Date().toISOString().split('T')[0],
+            data.longitude || null,
+            data.latitude || null
+          ]);
+          results.created.push(id_firestore);
+        }
+      } catch (err) {
+        console.error(`[Sync] Erreur pour signalement ${id_firestore}:`, err.message);
+        results.errors.push({ id: id_firestore, error: err.message });
+      }
+    }
+
+    console.log('[Sync] Pull terminé:', results);
+    res.json({
+      success: true,
+      message: `Pull terminé: ${results.created.length} créés, ${results.updated.length} mis à jour`,
+      data: results
+    });
+  } catch (e) {
+    console.error('[Sync] Erreur pull:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// GET /api/sync/unsynced - Récupérer les signalements non synchronisés vers Firestore
+app.get('/api/sync/unsynced', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        id_signalement,
+        id_user,
+        id_statut,
+        description,
+        surface_m2,
+        budget,
+        date_signalement,
+        ST_X(geom) AS longitude,
+        ST_Y(geom) AS latitude,
+        source,
+        synced,
+        created_at
+      FROM signalements
+      WHERE synced = false OR source = 'LOCAL'
+    `);
+
+    res.json({ success: true, signalements: result.rows });
+  } catch (e) {
+    console.error('[Sync] Erreur unsynced:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/sync/mark-synced - Marquer des signalements comme synchronisés
+app.post('/api/sync/mark-synced', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.json({ success: true, updated: 0 });
+    }
+
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+    const result = await db.query(
+      `UPDATE signalements SET synced = true WHERE id_signalement IN (${placeholders}) RETURNING id_signalement`,
+      ids
+    );
+
+    res.json({ success: true, updated: result.rows.length });
+  } catch (e) {
+    console.error('[Sync] Erreur mark-synced:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// GET /api/sync/stats - Statistiques de synchronisation
+app.get('/api/sync/stats', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        COUNT(*) AS total,
+        SUM(CASE WHEN synced = true THEN 1 ELSE 0 END) AS synced_count,
+        SUM(CASE WHEN synced = false THEN 1 ELSE 0 END) AS unsynced_count,
+        SUM(CASE WHEN source = 'FIREBASE' THEN 1 ELSE 0 END) AS from_firebase,
+        SUM(CASE WHEN source = 'LOCAL' THEN 1 ELSE 0 END) AS from_local
+      FROM signalements
+    `);
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (e) {
+    console.error('[Sync] Erreur stats:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// =====================================================
 // ROUTES STATISTIQUES / DASHBOARD
 // =====================================================
 
