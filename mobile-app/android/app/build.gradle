@@ -22,6 +22,17 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+
+    // Renomme automatiquement les APK générés (debug/release)
+    // Change juste la valeur de appName si tu veux un autre nom.
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def appName = "roadmap"
+            def buildType = variant.buildType.name
+            def version = variant.versionName
+            outputFileName = "${appName}-${buildType}-v${version}.apk"
+        }
+    }
 }
 
 repositories {
