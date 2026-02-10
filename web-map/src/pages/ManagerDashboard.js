@@ -38,7 +38,8 @@ const ManagerDashboard = () => {
       setSyncing(true);
       setSyncMessage(null);
       
-      const result = await signalementService.syncWithFirebase();
+      // Synchronisation bidirectionnelle : Firestore ↔ PostgreSQL
+      const result = await signalementService.triggerFullSync('both');
       setSyncMessage({ type: 'success', text: result.message || 'Synchronisation réussie !' });
       
       // Recharger les stats après sync
