@@ -1,5 +1,0 @@
-node_modules/
-npm-debug.log
-.env
-secrets/*.json
-/node_modules
