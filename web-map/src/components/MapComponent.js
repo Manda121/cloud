@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import config from '../config/config';
+import PhotoModal from './PhotoModal';
 import './MapComponent.css';
 
 // Fix pour les icônes de Leaflet
@@ -59,6 +60,7 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, o
   const mapRef = useRef(null);
   const [clickedPosition, setClickedPosition] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [photoSignalement, setPhotoSignalement] = useState(null);
   const [newSignalement, setNewSignalement] = useState({
     description: '',
     surface_m2: '',
@@ -238,6 +240,28 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, o
                       <p>{signalement.description}</p>
                     </div>
                   )}
+
+                  {signalement.id_firestore && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPhotoSignalement(signalement);
+                      }}
+                      style={{
+                        marginTop: '10px',
+                        padding: '6px 14px',
+                        background: '#2196F3',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        width: '100%'
+                      }}
+                    >
+                      📷 Voir les photos
+                    </button>
+                  )}
                 </div>
               </Popup>
             </Marker>
@@ -310,6 +334,15 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, o
             </form>
           </div>
         </div>
+      )}
+
+      {/* Modal Photos */}
+      {photoSignalement && (
+        <PhotoModal
+          firestoreId={photoSignalement.id_firestore}
+          description={photoSignalement.description}
+          onClose={() => setPhotoSignalement(null)}
+        />
       )}
 
       {/* Compteur de signalements */}

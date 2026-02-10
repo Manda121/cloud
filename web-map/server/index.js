@@ -1,6 +1,28 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const db = require('./db');
+
+// Chemin vers le fichier de configuration prix
+const PRIX_CONF_PATH = path.join(__dirname, '..', 'prix.conf');
+
+// Lire le prix depuis prix.conf
+function readPrix() {
+  try {
+    const content = fs.readFileSync(PRIX_CONF_PATH, 'utf-8');
+    const match = content.match(/^prix\s*=\s*(\d+)/m);
+    return match ? parseInt(match[1], 10) : 0;
+  } catch (e) {
+    console.error('[Config] Erreur lecture prix.conf:', e.message);
+    return 0;
+  }
+}
+
+// Écrire le prix dans prix.conf
+function writePrix(value) {
+  fs.writeFileSync(PRIX_CONF_PATH, `prix=${value}\n`, 'utf-8');
+}
 
 const app = express();
 const PORT = process.env.SERVER_PORT || 3002;
@@ -43,6 +65,7 @@ app.get('/api/signalements', async (req, res) => {
     const result = await db.query(`
       SELECT 
         s.id_signalement,
+        s.id_firestore,
         s.id_user,
         s.id_statut,
         st.libelle AS statut_libelle,
@@ -84,6 +107,7 @@ app.get('/api/signalements/:id', async (req, res) => {
     const result = await db.query(`
       SELECT 
         s.id_signalement,
+        s.id_firestore,
         s.id_user,
         s.id_statut,
         st.libelle AS statut_libelle,
@@ -165,6 +189,14 @@ app.put('/api/signalements/:id', async (req, res) => {
   try {
     const { description, surface_m2, budget, id_entreprise, id_statut, geom } = req.body;
     
+    // Convertir les chaînes vides en null pour les colonnes INTEGER/NUMERIC
+    const safeInt = (v) => (v === '' || v === undefined || v === null) ? null : parseInt(v, 10);
+    const safeNum = (v) => (v === '' || v === undefined || v === null) ? null : parseFloat(v);
+    const safeEntreprise = safeInt(id_entreprise);
+    const safeStatut = safeInt(id_statut);
+    const safeSurface = safeNum(surface_m2);
+    const safeBudget = safeNum(budget);
+
     let query, params;
     if (geom && geom.coordinates) {
       const [lng, lat] = geom.coordinates;
@@ -179,7 +211,7 @@ app.put('/api/signalements/:id', async (req, res) => {
         WHERE id_signalement = $8
         RETURNING *
       `;
-      params = [description, surface_m2, budget, id_entreprise, id_statut, lng, lat, req.params.id];
+      params = [description || null, safeSurface, safeBudget, safeEntreprise, safeStatut, lng, lat, req.params.id];
     } else {
       query = `
         UPDATE signalements 
@@ -191,7 +223,7 @@ app.put('/api/signalements/:id', async (req, res) => {
         WHERE id_signalement = $6
         RETURNING *
       `;
-      params = [description, surface_m2, budget, id_entreprise, id_statut, req.params.id];
+      params = [description || null, safeSurface, safeBudget, safeEntreprise, safeStatut, req.params.id];
     }
     
     const result = await db.query(query, params);
@@ -284,22 +316,22 @@ app.post('/api/sync/pull', async (req, res) => {
           [id_firestore]
         );
 
-        // Résoudre id_user : chercher par firebase_uid ou par id_user (UUID)
+        // Résoudre id_user : chercher par firebase_uid ou par id (INTEGER)
         let id_user = null;
         const uid = data.id_user || data.uid;
         if (uid) {
-          // Vérifier si c'est un UUID valide (id_user direct)
-          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          if (uuidRegex.test(uid)) {
-            id_user = uid;
+          // Vérifier si c'est un entier (id direct)
+          const parsed = parseInt(uid, 10);
+          if (!isNaN(parsed) && String(parsed) === String(uid)) {
+            id_user = parsed;
           } else {
             // Sinon chercher par firebase_uid
             const userResult = await db.query(
-              'SELECT id_user FROM users WHERE firebase_uid = $1',
+              'SELECT id FROM users WHERE firebase_uid = $1',
               [uid]
             );
             if (userResult.rows.length > 0) {
-              id_user = userResult.rows[0].id_user;
+              id_user = userResult.rows[0].id;
             }
           }
         }
@@ -311,21 +343,23 @@ app.post('/api/sync/pull', async (req, res) => {
           // Mise à jour
           await db.query(`
             UPDATE signalements SET
-              description = COALESCE($2, description),
-              surface_m2 = COALESCE($3, surface_m2),
-              budget = COALESCE($4, budget),
-              date_signalement = COALESCE($5, date_signalement),
+              id_user = COALESCE($2, id_user),
+              description = COALESCE($3, description),
+              surface_m2 = COALESCE($4, surface_m2),
+              budget = COALESCE($5, budget),
+              date_signalement = COALESCE($6, date_signalement),
               geom = CASE 
-                WHEN $6::numeric IS NOT NULL AND $7::numeric IS NOT NULL 
-                THEN ST_SetSRID(ST_MakePoint($6, $7), 4326)
+                WHEN $7::numeric IS NOT NULL AND $8::numeric IS NOT NULL 
+                THEN ST_SetSRID(ST_MakePoint($7, $8), 4326)
                 ELSE geom
               END,
-              id_statut = COALESCE($8, id_statut),
+              id_statut = COALESCE($9, id_statut),
               source = 'FIREBASE',
               synced = true
             WHERE id_firestore = $1
           `, [
             id_firestore,
+            id_user,
             data.description || null,
             data.surface_m2 || null,
             data.budget || null,
@@ -341,7 +375,7 @@ app.post('/api/sync/pull', async (req, res) => {
               id_firestore, id_user, id_statut, description, 
               surface_m2, budget, date_signalement, geom, source, synced
             ) VALUES (
-              $1, $2::uuid, $3, $4, $5, $6, $7,
+              $1, $2, $3, $4, $5, $6, $7,
               CASE 
                 WHEN $8::numeric IS NOT NULL AND $9::numeric IS NOT NULL 
                 THEN ST_SetSRID(ST_MakePoint($8, $9), 4326)
@@ -401,9 +435,8 @@ app.get('/api/sync/unsynced', async (req, res) => {
         s.synced,
         s.created_at
       FROM signalements s
-      LEFT JOIN users u ON s.id_user = u.id_user
+      LEFT JOIN users u ON s.id_user = u.id
       WHERE s.id_firestore IS NULL
-        AND s.geom IS NOT NULL
     `);
 
     console.log(`[Sync] ${result.rows.length} signalements locaux à pousser vers Firestore`);
@@ -560,6 +593,61 @@ app.get('/api/statuts', async (req, res) => {
     res.json(result.rows);
   } catch (e) {
     console.error('[Statuts] Erreur getAll:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// =====================================================
+// ROUTES CONFIGURATION PRIX
+// =====================================================
+
+// GET - Lire le prix unitaire
+app.get('/api/config/prix', (req, res) => {
+  try {
+    const prix = readPrix();
+    res.json({ prix });
+  } catch (e) {
+    console.error('[Config] Erreur GET prix:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT - Modifier le prix unitaire
+app.put('/api/config/prix', (req, res) => {
+  try {
+    const { prix } = req.body;
+    if (prix === undefined || prix === null || isNaN(parseInt(prix, 10)) || parseInt(prix, 10) < 0) {
+      return res.status(400).json({ error: 'Valeur de prix invalide' });
+    }
+    const newPrix = parseInt(prix, 10);
+    writePrix(newPrix);
+    console.log(`[Config] Prix unitaire mis à jour: ${newPrix} MGA/m²`);
+    res.json({ success: true, prix: newPrix });
+  } catch (e) {
+    console.error('[Config] Erreur PUT prix:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET - Signalements avec montant calculé (prix × surface)
+app.get('/api/config/montants', async (req, res) => {
+  try {
+    const prix = readPrix();
+    const result = await db.query(`
+      SELECT id_signalement, description, surface_m2,
+             date_signalement, id_statut
+      FROM signalements
+      WHERE surface_m2 IS NOT NULL
+      ORDER BY date_signalement DESC
+    `);
+    const montants = result.rows.map(r => ({
+      ...r,
+      prix_unitaire: prix,
+      montant: Math.round(prix * parseFloat(r.surface_m2) * 100) / 100
+    }));
+    res.json({ prix_unitaire: prix, signalements: montants });
+  } catch (e) {
+    console.error('[Config] Erreur montants:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

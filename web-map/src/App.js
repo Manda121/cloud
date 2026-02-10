@@ -9,6 +9,7 @@ import RegisterPage from './pages/RegisterPage';
 import ManagerDashboard from './pages/ManagerDashboard';
 import ManageSignalementsPage from './pages/ManageSignalementsPage';
 import ManageUsersPage from './pages/ManageUsersPage';
+import ConfigPrixPage from './pages/ConfigPrixPage';
 import './App.css';
 
 function App() {
@@ -38,6 +39,11 @@ function App() {
               <Route path="/manager/users" element={
                 <ProtectedRoute>
                   <ManageUsersPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/manager/prix" element={
+                <ProtectedRoute>
+                  <ConfigPrixPage />
                 </ProtectedRoute>
               } />
             </Routes>

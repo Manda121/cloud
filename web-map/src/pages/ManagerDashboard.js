@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import axios from 'axios';
 import signalementService from '../services/signalementService';
 import authService from '../services/authService';
 import './ManagerDashboard.css';
@@ -10,22 +11,32 @@ const ManagerDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState(null);
+  const [montantInfo, setMontantInfo] = useState({ prix_unitaire: 0, montant_total: 0 });
 
   useEffect(() => {
     loadDashboardData();
   }, []);
 
+  const formatMGA = (value) => {
+    if (value === null || value === undefined) return '0 MGA';
+    return new Intl.NumberFormat('fr-FR').format(value) + ' MGA';
+  };
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
       
-      const [statsData, statusData] = await Promise.all([
+      const [statsData, statusData, montantsRes] = await Promise.all([
         signalementService.getStats().catch(() => null),
-        authService.getStatus().catch(() => null)
+        authService.getStatus().catch(() => null),
+        axios.get('/api/config/montants').catch(() => ({ data: { prix_unitaire: 0, signalements: [] } }))
       ]);
 
       setStats(statsData);
       setConnectionStatus(statusData);
+      const mData = montantsRes.data;
+      const total = (mData.signalements || []).reduce((s, m) => s + (m.montant || 0), 0);
+      setMontantInfo({ prix_unitaire: mData.prix_unitaire || 0, montant_total: total });
     } catch (err) {
       console.error('Erreur:', err);
     } finally {
@@ -135,10 +146,18 @@ const ManagerDashboard = () => {
         </div>
 
         <div className="stat-card">
+          <span className="stat-icon">�</span>
+          <div className="stat-info">
+            <span className="stat-value">{formatMGA(montantInfo.prix_unitaire)} /m²</span>
+            <span className="stat-label">Prix unitaire</span>
+          </div>
+        </div>
+
+        <div className="stat-card">
           <span className="stat-icon">💰</span>
           <div className="stat-info">
-            <span className="stat-value">{stats?.budget_total || 0} MGA</span>
-            <span className="stat-label">Budget total</span>
+            <span className="stat-value">{formatMGA(montantInfo.montant_total)}</span>
+            <span className="stat-label">Montant total (prix × surface)</span>
           </div>
         </div>
       </div>
@@ -157,6 +176,12 @@ const ManagerDashboard = () => {
             <span className="action-icon">👥</span>
             <span className="action-title">Gérer les utilisateurs</span>
             <span className="action-desc">Débloquer les comptes bloqués</span>
+          </Link>
+
+          <Link to="/manager/prix" className="action-card">
+            <span className="action-icon">💲</span>
+            <span className="action-title">Prix unitaire</span>
+            <span className="action-desc">Configurer le prix au m² et voir les montants</span>
           </Link>
 
           <Link to="/" className="action-card">

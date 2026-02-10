@@ -3,18 +3,8 @@
  * Gère les opérations CRUD avec Firebase Firestore
  */
 
-import { 
-  db, 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  setDoc,
-  SIGNALEMENTS_COLLECTION 
-} from '../config/firebase';
+import { db, SIGNALEMENTS_COLLECTION } from '../config/firebase';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 
 /**
  * Vérifie si l'utilisateur est en ligne
@@ -77,6 +67,8 @@ const fromFirestoreFormat = (docSnapshot) => {
     longitude: lng,
     latitude: lat,
     geom: lng && lat ? { coordinates: [lng, lat] } : null,
+    photos: Array.isArray(data.photos) ? data.photos : [],
+    photo_ids: Array.isArray(data.photo_ids) ? data.photo_ids : [],
     source: 'FIREBASE',
     synced: true,
     created_at: data.created_at || null,
@@ -292,6 +284,44 @@ const firestoreService = {
     } catch (error) {
       console.error('[Firestore] Erreur deleteByLocalId:', error.message);
       throw error;
+    }
+  },
+
+  /**
+   * Récupère les photos d'un signalement depuis Firestore
+   * Retourne un tableau de data URIs (base64) ou URLs
+   */
+  getPhotos: async (firestoreId) => {
+    if (!isOnline() || !firestoreId) {
+      return [];
+    }
+
+    try {
+      const docRef = doc(db, SIGNALEMENTS_COLLECTION, firestoreId);
+      const docSnap = await getDoc(docRef);
+
+      if (!docSnap.exists()) return [];
+
+      const data = docSnap.data();
+      const photos = [];
+
+      // 1. Photos base64 directement dans le champ 'photos'
+      if (Array.isArray(data.photos)) {
+        for (const p of data.photos) {
+          if (typeof p === 'string' && p.length > 0) {
+            if (p.startsWith('data:') || p.startsWith('http')) {
+              photos.push(p);
+            }
+          } else if (p && p.url) {
+            photos.push(p.url);
+          }
+        }
+      }
+
+      return photos;
+    } catch (error) {
+      console.error('[Firestore] Erreur getPhotos:', error.message);
+      return [];
     }
   },
 

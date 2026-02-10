@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import signalementService from '../services/signalementService';
 import { useAuth } from '../context/AuthContext';
 import config from '../config/config';
+import PhotoModal from '../components/PhotoModal';
 import './ManageSignalementsPage.css';
 
 const ManageSignalementsPage = () => {
@@ -13,6 +14,7 @@ const ManageSignalementsPage = () => {
   const [editForm, setEditForm] = useState({});
   const [message, setMessage] = useState(null);
   const [filterMine, setFilterMine] = useState(false);
+  const [photoSignalement, setPhotoSignalement] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -230,6 +232,16 @@ const ManageSignalementsPage = () => {
                       {sig.description || '-'}
                     </td>
                     <td className="actions-cell">
+                      {sig.id_firestore && (
+                        <button
+                          onClick={() => setPhotoSignalement(sig)}
+                          className="btn-edit"
+                          title="Voir les photos"
+                          style={{ marginRight: '4px' }}
+                        >
+                          📷
+                        </button>
+                      )}
                       <button 
                         onClick={() => startEdit(sig)}
                         className="btn-edit"
@@ -250,6 +262,13 @@ const ManageSignalementsPage = () => {
           </div>
         )}
       </div>
+      {photoSignalement && (
+        <PhotoModal
+          firestoreId={photoSignalement.id_firestore}
+          description={photoSignalement.description}
+          onClose={() => setPhotoSignalement(null)}
+        />
+      )}
     </div>
   );
 };
