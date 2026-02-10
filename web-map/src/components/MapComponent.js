@@ -55,7 +55,7 @@ const MapClickHandler = ({ onMapClick }) => {
   return null;
 };
 
-const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, onAddSignalement }) => {
+const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, onAddSignalement, showMyOnly, onToggleFilter, isAuthenticated }) => {
   const mapRef = useRef(null);
   const [clickedPosition, setClickedPosition] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -309,6 +309,25 @@ const MapComponent = ({ signalements = [], onMarkerClick, selectedSignalement, o
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Compteur de signalements */}
+      <div className="map-counter">
+        📍 {signalements.length} signalement{signalements.length !== 1 ? 's' : ''}
+        {showMyOnly && <span className="map-counter-filter"> (mes signalements)</span>}
+      </div>
+
+      {/* Filtre utilisateur */}
+      {isAuthenticated && onToggleFilter && (
+        <div className="map-filter-control">
+          <button
+            className={`map-filter-btn ${showMyOnly ? 'active' : ''}`}
+            onClick={onToggleFilter}
+            title={showMyOnly ? 'Voir tous les signalements' : 'Voir mes signalements'}
+          >
+            {showMyOnly ? '👤 Mes signalements' : '🗺️ Tous'}
+          </button>
         </div>
       )}
 
