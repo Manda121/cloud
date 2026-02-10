@@ -11,7 +11,7 @@ async function register(data) {
   const result = await db.query(
     `INSERT INTO users (email, password, firstname, lastname)
      VALUES ($1,$2,$3,$4)
-     RETURNING id_user,email`,
+     RETURNING id,email`,
     [data.email, hashedPassword, data.firstname, data.lastname]
   );
 
@@ -26,7 +26,7 @@ async function registerFromFirebase(data) {
   const hashedPassword = data.password ? await bcrypt.hash(data.password, 10) : null;
 
   // Vérifier si l'utilisateur existe déjà
-  const existing = await db.query('SELECT id_user FROM users WHERE email = $1', [data.email]);
+  const existing = await db.query('SELECT id FROM users WHERE email = $1', [data.email]);
   
   if (existing.rows.length > 0) {
     // Mettre à jour avec firebase_uid
@@ -36,7 +36,7 @@ async function registerFromFirebase(data) {
            firstname = COALESCE($3, firstname), lastname = COALESCE($4, lastname),
            synced_from_firebase = true
        WHERE email = $5
-       RETURNING id_user, email, firebase_uid`,
+       RETURNING id, email, firebase_uid`,
       [data.firebase_uid, hashedPassword, data.firstname, data.lastname, data.email]
     );
     return result.rows[0];
@@ -45,7 +45,7 @@ async function registerFromFirebase(data) {
   const result = await db.query(
     `INSERT INTO users (firebase_uid, email, password, firstname, lastname, synced_from_firebase)
      VALUES ($1,$2,$3,$4,$5,true)
-     RETURNING id_user,email,firebase_uid`,
+     RETURNING id,email,firebase_uid`,
     [data.firebase_uid, data.email, hashedPassword, data.firstname, data.lastname]
   );
 
@@ -78,24 +78,24 @@ async function login(email, password) {
       `UPDATE users
        SET attempts = attempts + 1,
            blocked = (attempts + 1) >= $1
-       WHERE id_user=$2`,
-      [MAX_ATTEMPTS, user.id_user]
+       WHERE id=$2`,
+      [MAX_ATTEMPTS, user.id]
     );
     throw new Error("Mot de passe incorrect");
   }
 
   await db.query(
-    "UPDATE users SET attempts=0 WHERE id_user=$1",
-    [user.id_user]
+    "UPDATE users SET attempts=0 WHERE id=$1",
+    [user.id]
   );
 
   const token = jwt.sign(
-    { id: user.id_user, email: user.email, firebase_uid: user.firebase_uid },
+    { id: user.id, email: user.email, firebase_uid: user.firebase_uid },
     process.env.JWT_SECRET,
     { expiresIn: process.env.SESSION_DURATION || "1h" }
   );
 
-  return { token, user: { id: user.id_user, email: user.email, firebase_uid: user.firebase_uid } };
+  return { token, user: { id: user.id, email: user.email, firebase_uid: user.firebase_uid } };
 }
 
 /**
@@ -118,7 +118,7 @@ async function updateUser(id, data) {
   await db.query(
     `UPDATE users
      SET firstname=$1, lastname=$2
-     WHERE id_user=$3`,
+     WHERE id=$3`,
     [data.firstname, data.lastname, id]
   );
 }
@@ -130,36 +130,6 @@ async function unblockUser(email) {
   );
 }
 
-/**
- * Récupérer tous les utilisateurs bloqués
- */
-async function getBlockedUsers() {
-  const result = await db.query(
-    `SELECT id_user, email, firstname, lastname, attempts, created_at 
-     FROM users 
-     WHERE blocked = true 
-     ORDER BY created_at DESC`
-  );
-  return result.rows;
-}
-
-/**
- * Débloquer un utilisateur par son ID
- */
-async function unblockUserById(id) {
-  const result = await db.query(
-    `UPDATE users 
-     SET attempts=0, blocked=false 
-     WHERE id_user=$1 
-     RETURNING id_user, email, firebase_uid`,
-    [id]
-  );
-  if (result.rows.length === 0) {
-    throw new Error('Utilisateur non trouvé');
-  }
-  return result.rows[0];
-}
-
 module.exports = {
   register,
   registerFromFirebase,
@@ -168,6 +138,4 @@ module.exports = {
   findByFirebaseUid,
   updateUser,
   unblockUser,
-  getBlockedUsers,
-  unblockUserById,
 };

@@ -90,6 +90,8 @@
   const stats = ref<any>(null);
   let map: L.Map | null = null;
   let markersLayer: L.LayerGroup | null = null;
+  let userMarker: L.CircleMarker | null = null;
+  const USER_ZOOM = 18;
 
   onMounted(async () => {
     // Coordonnées d'Antananarivo (latitude, longitude)
@@ -114,6 +116,10 @@
 
     // Charger les stats
     loadStats();
+
+    // Essayer de centrer sur la position de l'utilisateur au démarrage
+    // (demande de permission si nécessaire)
+    centerOnUser();
 
     // Écouter les nouveaux signalements créés
     const onCreated = (ev: any) => {
@@ -222,16 +228,38 @@
     await loadStats();
   }
 
-  function centerOnUser() {
+  function centerOnUser(zoom = USER_ZOOM) {
     if (!map) return;
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          map?.setView([pos.coords.latitude, pos.coords.longitude], 15);
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          // Fly to the user's position with a nice animation
+          map?.flyTo([lat, lng], zoom, { animate: true, duration: 1.0 });
+
+          // Add or update a small marker/circle for the user's position
+          try {
+            if (userMarker) {
+              userMarker.setLatLng([lat, lng]);
+            } else {
+              userMarker = L.circleMarker([lat, lng], {
+                radius: 8,
+                weight: 2,
+                color: '#ffffff',
+                fillColor: '#4facfe',
+                fillOpacity: 0.95,
+              }).addTo(markersLayer ?? map!);
+            }
+          } catch (e) {
+            console.warn('Impossible d\'afficher le marqueur utilisateur', e);
+          }
         },
-        () => {
-          console.warn('Géolocalisation non disponible');
-        }
+        (err) => {
+          console.warn('Géolocalisation non disponible', err);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
     }
   }

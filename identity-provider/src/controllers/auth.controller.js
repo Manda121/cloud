@@ -147,52 +147,6 @@ exports.unblock = async (req, res) => {
 };
 
 /**
- * Récupérer la liste des utilisateurs bloqués
- */
-exports.getBlockedUsers = async (req, res) => {
-  try {
-    const blockedUsers = await localAuth.getBlockedUsers();
-    res.json(blockedUsers);
-  } catch (e) {
-    console.error('[Auth Controller] Erreur récupération utilisateurs bloqués:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-};
-
-/**
- * Débloquer un utilisateur par ID (supporte Firebase si online)
- */
-exports.unblockById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const online = await selector.isOnline();
-    
-    // Débloquer dans la base locale
-    const user = await localAuth.unblockUserById(id);
-    
-    // Si online et l'utilisateur a un firebase_uid, débloquer aussi dans Firebase
-    if (online && selector.useFirebase() && user && user.firebase_uid) {
-      try {
-        await firebaseAuth.enableUser(user.firebase_uid);
-        console.log('[Auth Controller] Utilisateur débloqué dans Firebase:', user.firebase_uid);
-      } catch (firebaseError) {
-        console.error('[Auth Controller] Erreur Firebase unblock:', firebaseError.message);
-        // On continue même si Firebase échoue
-      }
-    }
-    
-    res.json({ 
-      message: 'Utilisateur débloqué',
-      user: { id_user: user.id_user, email: user.email },
-      mode: online ? 'online' : 'offline'
-    });
-  } catch (e) {
-    console.error('[Auth Controller] Erreur déblocage utilisateur:', e.message);
-    res.status(400).json({ error: e.message });
-  }
-};
-
-/**
  * Vérifier le statut de connectivité et le mode d'authentification actuel
  */
 exports.status = async (req, res) => {

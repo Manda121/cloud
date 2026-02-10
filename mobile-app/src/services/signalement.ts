@@ -1,11 +1,36 @@
 /**
- * Service de gestion des signalements
- * Appelle l'API identity-provider avec authentification Firebase/Local
+ * Service de gestion des signalements - MODE HYBRIDE
+ * 
+ * Stratégie :
+ * 1. Si le backend est disponible → appeler l'API identity-provider
+ * 2. Si le backend est indisponible → stocker dans Firestore directement
+ * 3. Toujours sauvegarder en local (localStorage) pour l'offline immédiat
+ * 
+ * Les signalements dans Firestore sont visibles par tous les appareils connectés.
  */
 
-import { getAuthToken } from './auth';
+import { getAuthToken, getAuthMode, refreshToken } from './auth';
+import { isBackendReachable, getBackendUrl } from './backend';
+import { db } from './firebase';
+import { auth as firebaseAuth } from './firebase';
+import { savePhotos, getPhotosData, updatePhotosSignalementId } from './photoStorage';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  getDoc,
+  query,
+  where,
+  orderBy,
+  serverTimestamp,
+  GeoPoint,
+  updateDoc,
+  deleteDoc,
+  Timestamp,
+} from 'firebase/firestore';
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
+
 
 export interface SignalementCreate {
   description: string;
@@ -15,6 +40,7 @@ export interface SignalementCreate {
   budget?: number;
   date_signalement?: string;
   source?: 'LOCAL' | 'FIREBASE';
+  photos?: string[];
 }
 
 export interface Signalement {
@@ -49,6 +75,14 @@ function getAuthHeaders(): HeadersInit {
   return headers;
 }
 
+
+
+// =====================================================
+// FONCTIONS FIRESTORE (fallback quand backend indisponible)
+// =====================================================
+
+const FIRESTORE_COLLECTION = 'signalements';
+
 /**
  * Crée un signalement dans Firestore
  */
@@ -65,6 +99,20 @@ async function createSignalementFirestore(data: SignalementCreate): Promise<Sign
   const uid = user?.uid || 'offline-' + Date.now();
   const email = user?.email || 'anonyme';
 
+  // Générer un ID pour le signalement avant création
+  const tempId = `sig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // Sauvegarder les photos dans IndexedDB (compressées) au lieu de Firestore
+  let photoIds: string[] = [];
+  if (data.photos && data.photos.length > 0) {
+    try {
+      photoIds = await savePhotos(tempId, data.photos);
+      console.log('[Signalement] Photos sauvegardées dans IndexedDB:', photoIds.length);
+    } catch (err) {
+      console.warn('[Signalement] Échec sauvegarde photos IndexedDB:', err);
+    }
+  }
+
   const docData = {
     uid: uid,
     email: email,
@@ -75,7 +123,9 @@ async function createSignalementFirestore(data: SignalementCreate): Promise<Sign
     surface_m2: data.surface_m2 ?? null,
     budget: data.budget ?? null,
     date_signalement: data.date_signalement ?? new Date().toISOString().slice(0, 10),
-    photos: data.photos ?? [],
+    // Stocker uniquement les IDs des photos (pas les données base64)
+    photo_ids: photoIds,
+    photos: [], // Vide pour éviter la limite Firestore de 1MB
     source: 'FIREBASE' as const,
     synced: false, // pas encore synchronisé avec le backend
     id_statut: 1, // Nouveau
@@ -84,6 +134,15 @@ async function createSignalementFirestore(data: SignalementCreate): Promise<Sign
 
   const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION), docData);
   console.log('[Signalement] Créé dans Firestore:', docRef.id);
+
+  // Mettre à jour le signalement_id dans les photos stockées
+  if (photoIds.length > 0) {
+    try {
+      await updatePhotosSignalementId(photoIds, docRef.id);
+    } catch (err) {
+      console.warn('[Signalement] Échec mise à jour photo IDs:', err);
+    }
+  }
 
   return {
     id_signalement: docRef.id,
@@ -164,11 +223,15 @@ async function getSignalementByIdFirestore(id: string): Promise<Signalement> {
  * Crée un nouveau signalement via l'API
  */
 export async function createSignalement(data: SignalementCreate): Promise<Signalement> {
-  const response = await fetch(`${API_BASE}/api/signalements`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(data),
-  });
+  // Essayer le backend d'abord
+  try {
+    const reachable = await isBackendReachable();
+    if (reachable) {
+      const response = await fetch(`${getBackendUrl()}/api/signalements`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
@@ -183,39 +246,67 @@ export async function createSignalement(data: SignalementCreate): Promise<Signal
     console.warn('[Signalement] Backend indisponible, fallback Firestore:', err.message);
   }
 
-  return response.json();
+  // Fallback : Firestore
+  return createSignalementFirestore(data);
 }
 
 /**
  * Récupère tous les signalements
  */
 export async function getSignalements(): Promise<Signalement[]> {
-  const response = await fetch(`${API_BASE}/api/signalements`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-  });
+  try {
+    const reachable = await isBackendReachable();
+    if (reachable) {
+      const response = await fetch(`${getBackendUrl()}/api/signalements`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
 
-  if (!response.ok) {
-    throw new Error(`Erreur ${response.status}`);
+      if (!response.ok) throw new Error(`Erreur ${response.status}`);
+      return response.json();
+    }
+  } catch (err: any) {
+    console.warn('[Signalement] Backend indisponible pour GET, fallback Firestore:', err.message);
   }
 
-  return response.json();
+  // Fallback : Firestore + local
+  try {
+    return await getSignalementsFirestore();
+  } catch {
+    // Dernier fallback : localStorage
+    return getLocalSignalements();
+  }
 }
 
 /**
  * Récupère un signalement par son ID
  */
 export async function getSignalementById(id: string): Promise<Signalement> {
-  const response = await fetch(`${API_BASE}/api/signalements/${encodeURIComponent(id)}`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-  });
+  try {
+    const reachable = await isBackendReachable();
+    if (reachable) {
+      const response = await fetch(`${getBackendUrl()}/api/signalements/${encodeURIComponent(id)}`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
 
-  if (!response.ok) {
-    throw new Error(`Erreur ${response.status}`);
+      if (!response.ok) throw new Error(`Erreur ${response.status}`);
+      return response.json();
+    }
+  } catch (err: any) {
+    console.warn('[Signalement] Backend indisponible pour getById, fallback:', err.message);
   }
 
-  return response.json();
+  // Fallback : Firestore
+  try {
+    return await getSignalementByIdFirestore(id);
+  } catch {
+    // Dernier fallback : localStorage
+    const locals = getLocalSignalements();
+    const found = locals.find((s: any) => s.id_signalement === id);
+    if (found) return found;
+    throw new Error('Signalement non trouvé');
+  }
 }
 
 // Interface simple pour GeoJSON Feature Collection
@@ -233,23 +324,55 @@ interface FeatureCollection {
 
 /**
  * Récupère les signalements au format GeoJSON (pour Leaflet)
+ * Fallback : construit le GeoJSON depuis Firestore ou localStorage
  */
 export async function getSignalementsGeoJSON(filters?: { userId?: number; statutId?: number }): Promise<FeatureCollection> {
-  const params = new URLSearchParams();
-  if (filters?.userId) params.append('userId', String(filters.userId));
-  if (filters?.statutId) params.append('statutId', String(filters.statutId));
+  try {
+    const reachable = await isBackendReachable();
+    if (reachable) {
+      const params = new URLSearchParams();
+      if (filters?.userId) params.append('userId', String(filters.userId));
+      if (filters?.statutId) params.append('statutId', String(filters.statutId));
 
-  const url = `${API_BASE}/api/signalements/geo/geojson${params.toString() ? '?' + params : ''}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-  });
+      const url = `${getBackendUrl()}/api/signalements/geo/geojson${params.toString() ? '?' + params : ''}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
 
-  if (!response.ok) {
-    throw new Error(`Erreur ${response.status}`);
+      if (!response.ok) throw new Error(`Erreur ${response.status}`);
+      return response.json();
+    }
+  } catch (err: any) {
+    console.warn('[Signalement] Backend GeoJSON indisponible, construction locale:', err.message);
   }
 
-  return response.json();
+  // Fallback : construire GeoJSON depuis Firestore ou local
+  let signalements: Signalement[];
+  try {
+    signalements = await getSignalementsFirestore();
+  } catch {
+    signalements = getLocalSignalements();
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features: signalements.map((s) => ({
+      type: 'Feature' as const,
+      properties: {
+        id_signalement: s.id_signalement,
+        description: s.description,
+        id_statut: s.id_statut,
+        date_signalement: s.date_signalement,
+        source: s.source,
+        synced: s.synced,
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: [s.longitude, s.latitude],
+      },
+    })),
+  };
 }
 
 /**
@@ -268,7 +391,7 @@ export async function getSignalementsInBbox(
     maxLng: String(maxLng),
   });
 
-  const response = await fetch(`${API_BASE}/api/signalements/geo/bbox?${params}`, {
+  const response = await fetch(`${getBackendUrl()}/api/signalements/geo/bbox?${params}`, {
     method: 'GET',
     headers: getAuthHeaders(),
   });
@@ -294,7 +417,7 @@ export async function getSignalementsNearby(
     radius: String(radiusMeters),
   });
 
-  const response = await fetch(`${API_BASE}/api/signalements/geo/nearby?${params}`, {
+  const response = await fetch(`${getBackendUrl()}/api/signalements/geo/nearby?${params}`, {
     method: 'GET',
     headers: getAuthHeaders(),
   });
@@ -316,7 +439,7 @@ export async function getSignalementsStats(): Promise<{
   budget_total: number;
   synchronisation: { synced: number; not_synced: number };
 }> {
-  const response = await fetch(`${API_BASE}/api/signalements/stats`, {
+  const response = await fetch(`${getBackendUrl()}/api/signalements/stats`, {
     method: 'GET',
     headers: getAuthHeaders(),
   });
@@ -341,10 +464,45 @@ export function getLocalSignalements(): any[] {
   }
 }
 
-export function saveLocalSignalement(signalement: any): void {
+export async function saveLocalSignalement(signalement: any): Promise<void> {
   const list = getLocalSignalements();
+
+  // Si le signalement contient des photos (base64), les sauvegarder dans IndexedDB
+  try {
+    if (signalement.photos && Array.isArray(signalement.photos) && signalement.photos.length > 0) {
+      const { savePhotos } = await import('./photoStorage');
+      try {
+        const photoIds = await savePhotos(signalement.id_signalement, signalement.photos);
+        // Remplacer les données base64 par des références
+        signalement.photo_ids = photoIds;
+        delete signalement.photos;
+        console.log('[Signalement] Photos locales déplacées vers IndexedDB, ids:', photoIds);
+      } catch (err) {
+        console.warn('[Signalement] Échec sauvegarde photos dans IndexedDB:', err);
+        // Si échec, garder les photos en mémoire mais éviter planter l'enregistrement local
+      }
+    }
+  } catch (err) {
+    console.warn('[Signalement] Erreur lors du traitement des photos locales:', err);
+  }
+
   list.push(signalement);
-  localStorage.setItem('signalements', JSON.stringify(list));
+
+  try {
+    localStorage.setItem('signalements', JSON.stringify(list));
+  } catch (err: any) {
+    // Gestion de l'erreur de quota : supprimer les champs lourds et retenter
+    console.warn('[Signalement] Quota dépassé lors du saveLocalSignalement, tentative de fallback');
+    for (const s of list) {
+      if (s.photos) delete s.photos;
+    }
+    try {
+      localStorage.setItem('signalements', JSON.stringify(list));
+      console.log('[Signalement] Sauvegarde locale réussie après suppression des champs lourds');
+    } catch (err2) {
+      console.error('[Signalement] Sauvegarde locale échouée même après fallback:', err2);
+    }
+  }
 }
 
 export function updateLocalSignalement(id: string, updates: Partial<any>): void {

@@ -7,10 +7,6 @@
         </ion-buttons>
         <ion-title>Liste des Signalements</ion-title>
         <ion-buttons slot="end">
-          <ion-button @click="onSync" :disabled="syncing">
-            <ion-spinner v-if="syncing" name="crescent" style="width: 20px; height: 20px;"></ion-spinner>
-            <ion-icon v-else :icon="syncOutline"></ion-icon>
-          </ion-button>
           <ion-button @click="refreshList">
             <ion-icon :icon="refreshOutline"></ion-icon>
           </ion-button>
@@ -19,11 +15,6 @@
     </ion-header>
 
     <ion-content class="ion-padding">
-      <!-- Sync status banner -->
-      <div v-if="syncMessage" class="sync-banner" :class="{ 'sync-error': syncError }">
-        {{ syncMessage }}
-        <ion-button fill="clear" size="small" @click="syncMessage = null">✕</ion-button>
-      </div>
       <!-- Statistiques rapides -->
       <div class="stats-cards" v-if="stats">
         <div class="stat-card">
@@ -64,39 +55,21 @@
       <!-- Liste des signalements -->
       <ion-list v-else class="signalements-list">
         <ion-item-sliding v-for="s in signalements" :key="s.id_signalement">
-          <ion-item class="signalement-item" :class="getStatusClass(s.id_statut)">
-            <!-- Photo thumbnail -->
-            <div slot="start" class="item-start">
-              <div v-if="getPhotoForSignalement(s.id_signalement)" class="photo-thumbnail" @click="viewSignalement(s)">
-                <img :src="getPhotoForSignalement(s.id_signalement)" alt="Photo" />
-              </div>
-              <ion-icon v-else :icon="locationOutline" class="location-icon" @click="viewSignalement(s)"></ion-icon>
-            </div>
-            <ion-label @click="viewSignalement(s)">
+          <ion-item @click="viewSignalement(s)" class="signalement-item" :class="getStatusClass(s.id_statut)">
+            <ion-icon :icon="locationOutline" slot="start" class="location-icon"></ion-icon>
+            <ion-label>
               <h2>{{ truncate(s.description, 50) }}</h2>
               <p class="meta">
                 <span class="date">📅 {{ formatDate(s.date_signalement) }}</span>
                 <span class="coords">📍 {{ s.latitude?.toFixed(4) }}, {{ s.longitude?.toFixed(4) }}</span>
               </p>
               <p class="details">
+                <ion-badge :color="getStatusColor(s.id_statut)">{{ getStatusLabel(s.id_statut) }}</ion-badge>
                 <span v-if="s.surface_m2" class="surface">{{ s.surface_m2 }} m²</span>
                 <span v-if="s.budget" class="budget">{{ formatBudget(s.budget) }} Ar</span>
-                <span v-if="!s.synced" class="not-synced">🔄 Non sync</span>
               </p>
             </ion-label>
-            <!-- Quick status selector -->
-            <ion-select
-              slot="end"
-              :value="s.id_statut"
-              interface="popover"
-              @ionChange="onQuickStatusChange(s, $event)"
-              class="quick-status-select"
-              :class="'status-select-' + s.id_statut"
-            >
-              <ion-select-option :value="1">🟠 Nouveau</ion-select-option>
-              <ion-select-option :value="2">🔵 En cours</ion-select-option>
-              <ion-select-option :value="3">🟢 Terminé</ion-select-option>
-            </ion-select>
+            <ion-icon :icon="chevronForwardOutline" slot="end"></ion-icon>
           </ion-item>
 
           <!-- Actions slide -->
@@ -128,30 +101,47 @@
             </ion-buttons>
           </ion-toolbar>
         </ion-header>
-        <ion-content class="ion-padding" v-if="editingSignalement">
-          <ion-item>
-            <ion-label position="stacked">Description</ion-label>
-            <ion-textarea v-model="editingSignalement.description" :rows="4"></ion-textarea>
-          </ion-item>
-          <ion-item>
-            <ion-label position="stacked">Surface (m²)</ion-label>
-            <ion-input type="number" v-model.number="editingSignalement.surface_m2"></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-label position="stacked">Budget (Ar)</ion-label>
-            <ion-input type="number" v-model.number="editingSignalement.budget"></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-label position="stacked">Statut</ion-label>
-            <ion-select v-model="editingSignalement.id_statut">
-              <ion-select-option :value="1">Nouveau</ion-select-option>
-              <ion-select-option :value="2">En cours</ion-select-option>
-              <ion-select-option :value="3">Terminé</ion-select-option>
-            </ion-select>
-          </ion-item>
+        <ion-content class="ion-padding modal-content" v-if="editingSignalement">
+          <div class="modal-form">
+            <div class="modal-form-group">
+              <label class="modal-label">Description</label>
+              <ion-textarea 
+                v-model="editingSignalement.description" 
+                :rows="4"
+                class="modal-input"
+                placeholder="Description du signalement..."
+              ></ion-textarea>
+            </div>
+            <div class="modal-form-group">
+              <label class="modal-label">Surface (m²)</label>
+              <ion-input 
+                type="number" 
+                v-model.number="editingSignalement.surface_m2"
+                class="modal-input"
+                placeholder="Ex: 10"
+              ></ion-input>
+            </div>
+            <div class="modal-form-group">
+              <label class="modal-label">Budget (Ar)</label>
+              <ion-input 
+                type="number" 
+                v-model.number="editingSignalement.budget"
+                class="modal-input"
+                placeholder="Ex: 50000"
+              ></ion-input>
+            </div>
+            <div class="modal-form-group">
+              <label class="modal-label">Statut</label>
+              <ion-select v-model="editingSignalement.id_statut" class="modal-select" interface="popover">
+                <ion-select-option :value="1">Nouveau</ion-select-option>
+                <ion-select-option :value="2">En cours</ion-select-option>
+                <ion-select-option :value="3">Terminé</ion-select-option>
+              </ion-select>
+            </div>
+          </div>
           <div class="modal-actions">
-            <ion-button expand="block" @click="saveEdit" :disabled="saving">
-              {{ saving ? 'Enregistrement...' : 'Enregistrer' }}
+            <ion-button expand="block" @click="saveEdit" :disabled="saving" class="modal-save-btn">
+              {{ saving ? 'Enregistrement...' : 'Enregistrer les modifications' }}
             </ion-button>
           </div>
         </ion-content>
@@ -183,19 +173,18 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem,
-  IonLabel, IonIcon, IonButton, IonButtons, IonMenuButton,
+  IonLabel, IonIcon, IonButton, IonButtons, IonMenuButton, IonBadge,
   IonItemSliding, IonItemOptions, IonItemOption, IonFab, IonFabButton,
   IonModal, IonTextarea, IonInput, IonSelect, IonSelectOption,
   IonAlert, IonToast, IonSpinner
 } from '@ionic/vue';
 import {
-  locationOutline, createOutline, trashOutline,
-  addOutline, refreshOutline, alertCircleOutline, mapOutline, syncOutline
+  locationOutline, chevronForwardOutline, createOutline, trashOutline,
+  addOutline, refreshOutline, alertCircleOutline, mapOutline
 } from 'ionicons/icons';
 import { getSignalements, getSignalementsStats, Signalement } from '../services/signalement';
 import { getAuthToken } from '../services/auth';
-import { fullSync, FullSyncResult } from '../services/sync';
-import { getPhotosForSignalement } from '../services/photo';
+import { getBackendUrl } from '../services/backend';
 
 const router = useRouter();
 
@@ -208,11 +197,6 @@ const saving = ref(false);
 const deleteAlertOpen = ref(false);
 const signalementToDelete = ref<Signalement | null>(null);
 const toast = ref({ show: false, message: '', color: 'success' });
-const syncing = ref(false);
-const syncMessage = ref<string | null>(null);
-const syncError = ref(false);
-
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000';
 
 const deleteAlertButtons = [
   { text: 'Annuler', role: 'cancel' },
@@ -259,7 +243,7 @@ async function saveEdit() {
   saving.value = true;
   try {
     const token = getAuthToken();
-    const response = await fetch(`${API_BASE}/api/signalements/${editingSignalement.value.id_signalement}`, {
+    const response = await fetch(`${getBackendUrl()}/api/signalements/${editingSignalement.value.id_signalement}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -269,12 +253,14 @@ async function saveEdit() {
         description: editingSignalement.value.description,
         surface_m2: editingSignalement.value.surface_m2,
         budget: editingSignalement.value.budget,
-        id_statut: editingSignalement.value.id_statut
+        id_statut: Number(editingSignalement.value.id_statut)
       })
     });
     if (!response.ok) throw new Error('Erreur lors de la mise à jour');
     editModalOpen.value = false;
     showToast('Signalement mis à jour', 'success');
+    // Notify sidebar to refresh notification count
+    window.dispatchEvent(new CustomEvent('notifications:updated'));
     await loadData();
   } catch (err: any) {
     showToast(err.message || 'Erreur', 'danger');
@@ -292,7 +278,7 @@ async function deleteSignalement() {
   if (!signalementToDelete.value) return;
   try {
     const token = getAuthToken();
-    const response = await fetch(`${API_BASE}/api/signalements/${signalementToDelete.value.id_signalement}`, {
+    const response = await fetch(`${getBackendUrl()}/api/signalements/${signalementToDelete.value.id_signalement}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -327,8 +313,9 @@ function formatBudget(budget: number): string {
   return budget.toLocaleString('fr-FR');
 }
 
-function getStatusLabel(id: number): string {
-  switch (id) {
+function getStatusLabel(id: number | string): string {
+  const numId = Number(id);
+  switch (numId) {
     case 1: return 'Nouveau';
     case 2: return 'En cours';
     case 3: return 'Terminé';
@@ -336,8 +323,9 @@ function getStatusLabel(id: number): string {
   }
 }
 
-function getStatusColor(id: number): string {
-  switch (id) {
+function getStatusColor(id: number | string): string {
+  const numId = Number(id);
+  switch (numId) {
     case 1: return 'warning';
     case 2: return 'primary';
     case 3: return 'success';
@@ -345,96 +333,13 @@ function getStatusColor(id: number): string {
   }
 }
 
-function getStatusClass(id: number): string {
-  switch (id) {
+function getStatusClass(id: number | string): string {
+  const numId = Number(id);
+  switch (numId) {
     case 1: return 'status-nouveau';
     case 2: return 'status-encours';
     case 3: return 'status-termine';
     default: return '';
-  }
-}
-
-// ============ Sync functions ============
-
-async function onSync() {
-  syncing.value = true;
-  syncMessage.value = null;
-  syncError.value = false;
-
-  try {
-    const result: FullSyncResult = await fullSync(true);
-
-    if (result.success) {
-      syncMessage.value = `✅ Sync OK ! ${result.photosUploaded} photo(s), ${result.signalementsPushed} envoyé(s), ${result.signalementsPulled} reçu(s)`;
-      syncError.value = false;
-      // Refresh the list after sync
-      await loadData();
-    } else {
-      syncError.value = true;
-      syncMessage.value = `⚠️ Sync partielle : ${result.errors.join(', ')}`;
-    }
-  } catch (err: any) {
-    syncError.value = true;
-    syncMessage.value = `❌ Erreur : ${err.message}`;
-  } finally {
-    syncing.value = false;
-  }
-}
-
-// ============ Photo functions ============
-
-function getPhotoForSignalement(signalementId: string): string | undefined {
-  const photos = getPhotosForSignalement(signalementId);
-  if (photos.length > 0) {
-    // Priorité : miniature Firebase > miniature locale > image complète
-    return photos[0].thumbnailUrl || photos[0].thumbnailDataUri || photos[0].firebaseUrl || photos[0].localDataUri;
-  }
-  return undefined;
-}
-
-// ============ Quick status change ============
-
-async function onQuickStatusChange(signalement: Signalement, event: CustomEvent) {
-  const newStatus = Number(event.detail.value);
-  if (newStatus === signalement.id_statut) return;
-
-  console.log('[SignalementsList] Changing status:', { id: signalement.id_signalement, from: signalement.id_statut, to: newStatus });
-
-  try {
-    const token = getAuthToken();
-    if (!token) {
-      showToast('Non authentifié', 'danger');
-      return;
-    }
-
-    const response = await fetch(`${API_BASE}/api/signalements/${signalement.id_signalement}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ id_statut: newStatus })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
-      throw new Error(errorData.error || `Erreur ${response.status}`);
-    }
-
-    // Update local state
-    const idx = signalements.value.findIndex(s => s.id_signalement === signalement.id_signalement);
-    if (idx >= 0) {
-      signalements.value[idx].id_statut = newStatus;
-    }
-
-    showToast(`Statut changé → ${getStatusLabel(newStatus)}`, 'success');
-
-    // Refresh stats
-    const statsData = await getSignalementsStats().catch(() => null);
-    if (statsData) stats.value = statsData;
-
-  } catch (err: any) {
-    showToast(err.message || 'Erreur', 'danger');
   }
 }
 </script>
@@ -443,40 +348,51 @@ async function onQuickStatusChange(signalement: Signalement, event: CustomEvent)
 .stats-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 20px;
 }
 
 .stat-card {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 14px;
+  padding: 16px 12px;
   text-align: center;
   color: white;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  transition: transform 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
 }
 
 .stat-card.stat-nouveau {
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  box-shadow: 0 4px 15px rgba(245, 87, 108, 0.3);
 }
 
 .stat-card.stat-encours {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
 }
 
 .stat-card.stat-termine {
   background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  box-shadow: 0 4px 15px rgba(67, 233, 123, 0.3);
 }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 26px;
+  font-weight: 800;
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 11px;
   opacity: 0.9;
   margin-top: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .loading-container {
@@ -485,7 +401,12 @@ async function onQuickStatusChange(signalement: Signalement, event: CustomEvent)
   align-items: center;
   justify-content: center;
   height: 300px;
-  color: var(--ion-color-medium);
+  color: #718096;
+}
+
+.loading-container p {
+  font-size: 14px;
+  margin-top: 12px;
 }
 
 .empty-state {
@@ -495,13 +416,18 @@ async function onQuickStatusChange(signalement: Signalement, event: CustomEvent)
   justify-content: center;
   height: 400px;
   text-align: center;
-  color: var(--ion-color-medium);
+  color: #718096;
 }
 
 .empty-icon {
   font-size: 64px;
   margin-bottom: 16px;
-  opacity: 0.5;
+  opacity: 0.4;
+}
+
+.empty-state h3 {
+  color: #4a5568;
+  margin-bottom: 8px;
 }
 
 .signalements-list {
@@ -509,11 +435,16 @@ async function onQuickStatusChange(signalement: Signalement, event: CustomEvent)
 }
 
 .signalement-item {
-  --background: var(--ion-card-background, #fff);
-  margin-bottom: 12px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --background: #ffffff;
+  margin-bottom: 10px;
+  border-radius: 14px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.signalement-item:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .signalement-item.status-nouveau {
@@ -537,11 +468,12 @@ async function onQuickStatusChange(signalement: Signalement, event: CustomEvent)
   font-weight: 600;
   font-size: 15px;
   margin-bottom: 4px;
+  color: #1a202c;
 }
 
 .meta {
   font-size: 12px;
-  color: var(--ion-color-medium);
+  color: #718096;
   display: flex;
   gap: 12px;
 }
@@ -555,89 +487,88 @@ async function onQuickStatusChange(signalement: Signalement, event: CustomEvent)
 
 .surface, .budget {
   font-size: 12px;
-  color: var(--ion-color-medium);
-  background: var(--ion-color-light);
+  color: #4a5568;
+  background: #f0f4f8;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* ============================
+   MODAL FORM STYLING
+   ============================ */
+.modal-content {
+  --background: #f0f2f5;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-left: 2px;
+}
+
+.modal-input {
+  --background: #ffffff !important;
+  --color: #2d3748 !important;
+  --placeholder-color: #a0aec0 !important;
+  --placeholder-opacity: 1 !important;
+  --padding-start: 16px;
+  --padding-end: 16px;
+  border: 2px solid #d1d9e6;
+  border-radius: 12px;
+  background: #ffffff !important;
+  color: #2d3748 !important;
+  font-size: 15px;
+  transition: border-color 0.2s ease;
+}
+
+.modal-input:focus-within {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+}
+
+.modal-select {
+  --background: #ffffff;
+  --color: #2d3748;
+  --placeholder-color: #a0aec0;
+  border: 2px solid #d1d9e6;
+  border-radius: 12px;
+  padding: 8px 16px;
+  font-size: 15px;
+  color: #2d3748;
+  background: #ffffff;
 }
 
 .modal-actions {
-  margin-top: 24px;
+  margin-top: 28px;
+}
+
+.modal-save-btn {
+  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --border-radius: 14px;
+  height: 52px;
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
 }
 
 ion-fab-button {
   --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-/* Sync banner */
-.sync-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  margin-bottom: 16px;
-  border-radius: 8px;
-  background: #c6f6d5;
-  color: #2f855a;
-  font-size: 14px;
-}
-
-.sync-banner.sync-error {
-  background: #fed7d7;
-  color: #c53030;
-}
-
-/* Photo thumbnail */
-.item-start {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-}
-
-.photo-thumbnail {
-  width: 50px;
-  height: 50px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid #e2e8f0;
-  cursor: pointer;
-}
-
-.photo-thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* Quick status select */
-.quick-status-select {
-  --padding-start: 8px;
-  --padding-end: 8px;
-  font-size: 12px;
-  min-width: 100px;
-  max-width: 120px;
-}
-
-.status-select-1 {
-  --color: #f5576c;
-}
-
-.status-select-2 {
-  --color: #4facfe;
-}
-
-.status-select-3 {
-  --color: #43e97b;
-}
-
-/* Not synced indicator */
-.not-synced {
-  font-size: 11px;
-  color: #ed8936;
-  background: #fffaf0;
-  padding: 2px 6px;
-  border-radius: 4px;
 }
 
 @media (max-width: 600px) {

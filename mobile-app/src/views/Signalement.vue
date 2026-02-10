@@ -59,6 +59,59 @@
             </div>
           </div>
 
+          <div class="photo-gallery" v-if="remoteData?.photos?.length">
+            <h3>Photos</h3>
+            <div class="photos-grid">
+              <div class="photo-thumb" v-for="(p, idx) in remoteData.photos" :key="idx">
+                <img :src="getPhotoUrl(p)" @error="onPhotoError($event)" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Changer le statut -->
+          <div class="status-change-section">
+            <h3 class="section-title">
+              <ion-icon :icon="swapHorizontalOutline"></ion-icon>
+              Changer le statut
+            </h3>
+            <div class="status-options">
+              <button 
+                v-for="s in statusOptions" 
+                :key="s.id" 
+                class="status-option-btn" 
+                :class="{ active: newStatusId === s.id, [s.cssClass]: true }"
+                @click="newStatusId = s.id"
+              >
+                <ion-icon :icon="s.icon"></ion-icon>
+                <span>{{ s.label }}</span>
+              </button>
+            </div>
+            <ion-button 
+              expand="block" 
+              :disabled="statusUpdating || newStatusId === remoteData?.id_statut" 
+              @click="updateStatus"
+              class="save-status-btn"
+            >
+              <ion-spinner v-if="statusUpdating" name="crescent"></ion-spinner>
+              <template v-else>
+                <ion-icon :icon="checkmarkCircleOutline" slot="start"></ion-icon>
+                Enregistrer le changement
+              </template>
+            </ion-button>
+            <div v-if="statusSuccess && !statusOfflineMsg" class="alert alert-success">
+              <ion-icon :icon="checkmarkCircleOutline"></ion-icon>
+              Statut mis à jour avec succès !
+            </div>
+            <div v-if="statusSuccess && statusOfflineMsg" class="alert alert-offline">
+              <ion-icon :icon="cloudOfflineOutline"></ion-icon>
+              {{ statusOfflineMsg }}
+            </div>
+            <div v-if="statusError" class="alert alert-error">
+              <ion-icon :icon="alertCircleOutline"></ion-icon>
+              {{ statusError }}
+            </div>
+          </div>
+
           <div class="action-buttons">
             <ion-button expand="block" @click="goBack">
               <ion-icon :icon="arrowBackOutline" slot="start"></ion-icon>
@@ -77,6 +130,33 @@
               <div>
                 <span class="location-label">Position sélectionnée</span>
                 <span class="location-coords">{{ lat.toFixed(6) }}, {{ lng.toFixed(6) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <ion-icon :icon="documentTextOutline"></ion-icon>
+              Photos (vous pouvez en ajouter plusieurs)
+            </label>
+            <div class="photo-actions">
+              <ion-button size="small" color="primary" @click="takePhoto">
+                <ion-icon :icon="cameraOutline" slot="start"></ion-icon>
+                Prendre une photo
+              </ion-button>
+              <ion-button size="small" fill="outline" @click="openGallery">
+                Ajouter depuis la galerie
+              </ion-button>
+            </div>
+
+            <!-- Hidden inputs: one for camera capture (single), one for gallery (multiple) -->
+            <input ref="cameraInput" type="file" accept="image/*" capture="environment" @change="onFilesSelected" style="display:none" />
+            <input ref="galleryInput" type="file" accept="image/*" multiple @change="onFilesSelected" style="display:none" />
+
+            <div class="photos-preview" v-if="selectedPreviews.length">
+              <div class="photo-thumb" v-for="(p, i) in selectedPreviews" :key="i">
+                <img :src="p" />
+                <button type="button" class="remove-photo" @click="removePreview(i)">✕</button>
               </div>
             </div>
           </div>
@@ -136,43 +216,6 @@
               ></ion-datetime>
             </div>
 
-            <!-- Section Photo -->
-            <div class="form-group">
-              <label class="form-label">
-                <ion-icon :icon="cameraOutline"></ion-icon>
-                Photo de la dégradation
-              </label>
-              <div class="photo-section">
-                <!-- Aperçu des photos ajoutées -->
-                <div class="photo-previews" v-if="photos.length > 0">
-                  <div class="photo-thumb" v-for="(photo, index) in photos" :key="index">
-                    <img :src="photo.localDataUri" :alt="'Photo ' + (index + 1)" />
-                    <ion-button fill="clear" size="small" class="remove-photo" @click="removePhoto(index)">
-                      <ion-icon :icon="closeCircleOutline"></ion-icon>
-                    </ion-button>
-                  </div>
-                </div>
-                <!-- Bouton ajouter photo -->
-                <div class="photo-add">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    ref="fileInput"
-                    @change="onPhotoSelected"
-                    class="file-input-hidden"
-                  />
-                  <ion-button fill="outline" @click="($refs.fileInput as HTMLInputElement)?.click()" type="button">
-                    <ion-icon :icon="cameraOutline" slot="start"></ion-icon>
-                    {{ photos.length > 0 ? 'Ajouter une photo' : 'Prendre une photo' }}
-                  </ion-button>
-                </div>
-                <p class="photo-hint" v-if="photos.length > 0">
-                  {{ photos.length }} photo(s) — seront uploadées lors de la synchronisation
-                </p>
-              </div>
-            </div>
-
             <div v-if="errorMsg" class="alert alert-error">
               <ion-icon :icon="alertCircleOutline"></ion-icon>
               {{ errorMsg }}
@@ -191,17 +234,6 @@
                   Enregistrer le signalement
                 </template>
               </ion-button>
-              <!-- Bouton Synchronisation -->
-              <ion-button expand="block" color="success" @click="onSync" :disabled="syncing" type="button" class="sync-btn">
-                <ion-spinner v-if="syncing" name="crescent"></ion-spinner>
-                <template v-else>
-                  <ion-icon :icon="syncOutline" slot="start"></ion-icon>
-                  Synchroniser avec Firebase
-                </template>
-              </ion-button>
-              <p v-if="syncMessage" class="sync-status" :class="{ 'sync-error': syncError }">
-                {{ syncMessage }}
-              </p>
               <ion-button expand="block" fill="outline" color="medium" @click="goBack" type="button">
                 Annuler
               </ion-button>
@@ -209,6 +241,13 @@
           </form>
         </div>
       </template>
+
+      <!-- Webcam capture modal (pour PC/navigateur) -->
+      <WebcamCapture 
+        :isOpen="showWebcam" 
+        @close="showWebcam = false" 
+        @captured="onWebcamCaptured" 
+      />
     </ion-content>
   </ion-page>
 </template>
@@ -224,7 +263,8 @@ import {
   eyeOutline, addCircleOutline, locationOutline, calendarOutline, 
   resizeOutline, cashOutline, arrowBackOutline, documentTextOutline,
   alertCircleOutline, checkmarkCircleOutline, sendOutline, cameraOutline,
-  closeCircleOutline, syncOutline
+  swapHorizontalOutline, alertOutline, timeOutline, checkmarkDoneOutline,
+  cloudOfflineOutline
 } from 'ionicons/icons';
 import { createSignalement, getSignalementById, getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from '../services/signalement';
 import { getBackendUrl } from '../services/backend';
@@ -254,11 +294,22 @@ const errorMsg = ref<string | null>(null);
 const resultMsg = ref<string | null>(null);
 const resultType = ref<'success' | 'offline' | 'error'>('success');
 const loading = ref(false);
-const photos = ref<PhotoData[]>([]);
-const syncing = ref(false);
-const syncMessage = ref<string | null>(null);
-const syncError = ref(false);
-const fileInput = ref<HTMLInputElement | null>(null);
+const selectedFiles = ref<File[]>([]);
+const selectedPreviews = ref<string[]>([]);
+const cameraInput = ref<HTMLInputElement | null>(null);
+const galleryInput = ref<HTMLInputElement | null>(null);
+const showWebcam = ref(false);
+const newStatusId = ref<number>(1);
+const statusUpdating = ref(false);
+const statusSuccess = ref(false);
+const statusError = ref<string | null>(null);
+const statusOfflineMsg = ref<string | null>(null);
+
+const statusOptions = [
+  { id: 1, label: 'Nouveau', cssClass: 'opt-nouveau', icon: alertOutline },
+  { id: 2, label: 'En cours', cssClass: 'opt-encours', icon: timeOutline },
+  { id: 3, label: 'Terminé', cssClass: 'opt-termine', icon: checkmarkDoneOutline },
+];
 
 onMounted(async () => {
   const id = (route.query.id as string) || null;
@@ -271,6 +322,7 @@ onMounted(async () => {
       surface_m2.value = data.surface_m2 ?? null;
       budget.value = data.budget ?? null;
       date_signalement.value = data.date_signalement ?? date_signalement.value;
+      newStatusId.value = data.id_statut ?? 1;
     } catch (err: any) {
       console.warn('Fetch signalement failed', err);
       const locals = getLocalSignalements();
@@ -281,17 +333,28 @@ onMounted(async () => {
         surface_m2.value = local.surface_m2 ?? null;
         budget.value = local.budget ?? null;
         date_signalement.value = local.date_signalement ?? date_signalement.value;
+        newStatusId.value = local.id_statut ?? 1;
       }
     }
   }
 });
 
 function formatCoordinates() {
+  // Utiliser latitude/longitude renvoyés par l'API
+  if (remoteData.value?.latitude && remoteData.value?.longitude) {
+    return `${Number(remoteData.value.latitude).toFixed(6)}, ${Number(remoteData.value.longitude).toFixed(6)}`;
+  }
+  // Fallback: essayer geom_geojson
   if (remoteData.value?.geom_geojson) {
     try {
       const coords = JSON.parse(remoteData.value.geom_geojson)?.coordinates;
       return `${coords[1].toFixed(6)}, ${coords[0].toFixed(6)}`;
     } catch { }
+  }
+  // Fallback: essayer geom (objet GeoJSON local)
+  if (remoteData.value?.geom?.coordinates) {
+    const coords = remoteData.value.geom.coordinates;
+    return `${coords[1].toFixed(6)}, ${coords[0].toFixed(6)}`;
   }
   return `${lat.value.toFixed(6)}, ${lng.value.toFixed(6)}`;
 }
@@ -318,6 +381,27 @@ function getStatusText(statusId: number) {
     case 3: return 'Terminé';
     default: return 'Nouveau';
   }
+}
+
+function getPhotoUrl(p: any): string {
+  // Base64 ou data URL (photos locales)
+  if (typeof p === 'string') {
+    if (p.startsWith('data:') || p.startsWith('http')) return p;
+    // Si c'est un chemin relatif commençant par /uploads
+    if (p.startsWith('/')) return getBackendUrl() + p;
+    return p;
+  }
+  // Objet { url, filename, ... } retourné par l'API
+  if (p && p.url) {
+    if (p.url.startsWith('http')) return p.url;
+    return getBackendUrl() + p.url;
+  }
+  return '';
+}
+
+function onPhotoError(event: Event) {
+  const img = event.target as HTMLImageElement;
+  img.style.display = 'none';
 }
 
 async function onSubmit() {
@@ -352,11 +436,13 @@ async function onSubmit() {
       type: 'Point',
       coordinates: [lng.value, lat.value]
     },
+    photos: selectedPreviews.value,
     source: 'LOCAL' as const,
     synced: false,
+    id_statut: 1, // Par défaut 'Nouveau'
     created_at: new Date().toISOString()
   };
-  saveLocalSignalement(localSignalement);
+  await saveLocalSignalement(localSignalement);
 
   try {
     const created = await createSignalement({
@@ -365,6 +451,7 @@ async function onSubmit() {
       longitude: lng.value,
       surface_m2: surface_m2.value ?? undefined,
       budget: budget.value ?? undefined,
+      photos: selectedPreviews.value.length ? selectedPreviews.value : undefined,
       date_signalement: date_signalement.value,
     });
 
@@ -427,47 +514,178 @@ async function onSubmit() {
   }
 }
 
-// ============ Photo handlers ============
+function onFilesSelected(ev: Event) {
+  const input = ev.target as HTMLInputElement;
+  if (!input.files) return;
 
-async function onPhotoSelected(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input?.files?.[0];
-  if (!file) return;
+  Array.from(input.files).forEach((file) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const result = reader.result as string;
+      if (result) {
+        // Compresser l'image avant preview pour économiser mémoire
+        try {
+          const { compressImage } = await import('../services/photoStorage');
+          const compressed = await compressImage(result, 1024, 0.7);
+          selectedPreviews.value.push(compressed);
+        } catch (err) {
+          console.warn('[Signalement] Compression image failed, using original');
+          selectedPreviews.value.push(result);
+        }
+        selectedFiles.value.push(file);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
 
-  try {
-    // Utilise un ID temporaire si le signalement n'est pas encore créé
-    const tempId = (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now());
-    const photo = await prepareAndSavePhoto(file, tempId);
-    photos.value.push(photo);
-  } catch (err: any) {
-    console.error('Erreur ajout photo:', err);
-    errorMsg.value = 'Erreur lors de l\'ajout de la photo';
+  // Reset input so same file can be selected again if needed
+  input.value = '';
+}
+
+function removePreview(idx: number) {
+  selectedPreviews.value.splice(idx, 1);
+  selectedFiles.value.splice(idx, 1);
+}
+
+async function takePhoto() {
+  // Sur plateforme native (Android/iOS), utiliser Capacitor Camera
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const photo = await takePhotoFromCamera();
+      if (photo) {
+        try {
+          const dataUrl = photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath;
+          const { compressImage } = await import('../services/photoStorage');
+          const compressed = await compressImage(dataUrl, 1200, 0.75);
+          selectedPreviews.value.push(compressed);
+        } catch (e) {
+          console.warn('[Signalement] Compression failed for native photo, using original');
+          selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+        }
+        return;
+      }
+    } catch (e) {
+      console.warn('Native camera failed', e);
+    }
+    // Fallback natif
+    cameraInput.value?.click();
+    return;
   }
 
-  // Reset input pour pouvoir re-sélectionner le même fichier
-  if (input) input.value = '';
+  // Sur le web (PC), ouvrir le modal webcam
+  const canUseWebcam = typeof navigator !== 'undefined'
+    && typeof navigator.mediaDevices?.getUserMedia === 'function';
+  if (canUseWebcam) {
+    showWebcam.value = true;
+  } else {
+    // Fallback si pas de webcam API
+    cameraInput.value?.click();
+  }
 }
 
-function removePhoto(index: number) {
-  photos.value.splice(index, 1);
+async function onWebcamCaptured(dataUrl: string) {
+  try {
+    const { compressImage } = await import('../services/photoStorage');
+    const compressed = await compressImage(dataUrl, 1200, 0.75);
+    selectedPreviews.value.push(compressed);
+  } catch (err) {
+    console.warn('[Signalement] Compression failed for webcam photo, using original');
+    selectedPreviews.value.push(dataUrl);
+  }
 }
 
-// ============ Sync handler ============
+async function openGallery() {
+  try {
+    // Essayer d'utiliser le sélecteur natif (Capacitor)
+    const photo = await pickPhotoFromGallery();
+    if (photo) {
+      try {
+        const dataUrl = photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath;
+        const { compressImage } = await import('../services/photoStorage');
+        const compressed = await compressImage(dataUrl, 1200, 0.75);
+        selectedPreviews.value.push(compressed);
+      } catch (err) {
+        console.warn('[Signalement] Compression failed for gallery photo, using original');
+        selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+      }
+      return;
+    }
+  } catch (e) {
+    console.warn('Native gallery not available, falling back to input', e);
+  }
+  // Fallback: utiliser l'input file standard
+  galleryInput.value?.click();
+}
 
-async function onSync() {
-  syncing.value = true;
-  syncMessage.value = null;
-  syncError.value = false;
+async function updateStatus() {
+  const sig = remoteData.value;
+  if (!sig?.id_signalement) return;
+  statusUpdating.value = true;
+  statusSuccess.value = false;
+  statusError.value = null;
+
+  const isLocal = sig.source === 'LOCAL' && !sig.synced;
+
+  // Si le signalement est local et non synchronisé, on met à jour localement
+  if (isLocal) {
+    try {
+      updateLocalSignalement(sig.id_signalement, { id_statut: newStatusId.value });
+      remoteData.value.id_statut = newStatusId.value;
+      statusSuccess.value = true;
+      setTimeout(() => { statusSuccess.value = false; }, 3000);
+    } catch (err: any) {
+      statusError.value = 'Erreur lors de la mise à jour locale';
+      setTimeout(() => { statusError.value = null; }, 4000);
+    } finally {
+      statusUpdating.value = false;
+    }
+    return;
+  }
+
+  // Utiliser l'ID serveur si disponible, sinon l'ID local
+  const serverId = sig.id_signalement_server || sig.id_signalement;
 
   try {
-    const result: FullSyncResult = await fullSync(true);
-
-    if (result.success) {
-      syncMessage.value = `✅ Sync terminée ! ${result.photosUploaded} photo(s), ${result.signalementsPushed} signalement(s) envoyé(s), ${result.signalementsPulled} reçu(s) (${result.duration}ms)`;
-    } else {
-      syncError.value = true;
-      syncMessage.value = `⚠️ Sync partielle : ${result.errors.join(', ')}`;
+    const token = getAuthToken();
+    if (!token) {
+      statusError.value = 'Vous devez être connecté';
+      statusUpdating.value = false;
+      return;
     }
+    const backendUrl = getBackendUrl();
+    console.log('updateStatus -> PUT', `${backendUrl}/api/signalements/${serverId}`, { id_statut: newStatusId.value });
+    const response = await fetch(`${backendUrl}/api/signalements/${serverId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ id_statut: newStatusId.value })
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      console.error('updateStatus error response:', response.status, body);
+
+      // Si 404, fallback local
+      if (response.status === 404) {
+        updateLocalSignalement(sig.id_signalement, { id_statut: newStatusId.value });
+        remoteData.value.id_statut = newStatusId.value;
+        statusSuccess.value = true;
+        statusError.value = null;
+        setTimeout(() => { statusSuccess.value = false; }, 3000);
+        statusUpdating.value = false;
+        return;
+      }
+      throw new Error(body.error || `Erreur ${response.status}`);
+    }
+
+    await response.json();
+    remoteData.value.id_statut = newStatusId.value;
+    statusSuccess.value = true;
+    // Notifier le sidebar pour rafraîchir le compteur de notifications
+    window.dispatchEvent(new CustomEvent('notifications:updated'));
+    setTimeout(() => { statusSuccess.value = false; }, 3000);
   } catch (err: any) {
     console.error('updateStatus catch:', err);
 
@@ -549,7 +767,7 @@ async function onSync() {
     statusError.value = err.message || 'Erreur inconnue';
     setTimeout(() => { statusError.value = null; }, 4000);
   } finally {
-    syncing.value = false;
+    statusUpdating.value = false;
   }
 }
 
@@ -572,47 +790,59 @@ function goBack() {
 /* View Mode Styles */
 .view-container {
   padding: 20px;
+  max-width: 680px;
+  margin: 0 auto;
 }
 
 .view-header {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
+  padding: 24px 20px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .view-header h2 {
   margin: 16px 0 0;
   font-size: 20px;
-  color: #2d3748;
+  font-weight: 700;
+  color: #1a202c;
+  line-height: 1.3;
 }
 
 .status-badge {
   display: inline-block;
-  padding: 6px 16px;
+  padding: 6px 20px;
   border-radius: 20px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .status-nouveau {
   background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
   color: white;
+  box-shadow: 0 3px 10px rgba(245, 87, 108, 0.3);
 }
 
 .status-encours {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   color: white;
+  box-shadow: 0 3px 10px rgba(79, 172, 254, 0.3);
 }
 
 .status-termine {
   background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
   color: white;
+  box-shadow: 0 3px 10px rgba(67, 233, 123, 0.3);
 }
 
 .info-cards {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 24px;
 }
 
@@ -620,37 +850,54 @@ function goBack() {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px;
+  padding: 18px 20px;
   background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f0f4f8;
+  transition: all 0.2s ease;
+}
+
+.info-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .info-card ion-icon {
-  font-size: 28px;
+  font-size: 26px;
   color: #667eea;
+  flex-shrink: 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(102, 126, 234, 0.08);
 }
 
 .info-content {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .info-label {
-  font-size: 12px;
-  color: #718096;
+  font-size: 11px;
+  color: #a0aec0;
   text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .info-value {
   font-size: 16px;
   font-weight: 600;
-  color: #2d3748;
+  color: #1a202c;
+  line-height: 1.3;
 }
 
 /* Form Mode Styles */
 .form-container {
   padding: 20px;
+  max-width: 680px;
+  margin: 0 auto;
 }
 
 .form-header {
@@ -661,30 +908,36 @@ function goBack() {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 16px 20px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
+  border-radius: 16px;
   color: white;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
 }
 
 .location-preview ion-icon {
   font-size: 32px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
 }
 
 .location-label {
   display: block;
-  font-size: 12px;
-  opacity: 0.9;
+  font-size: 11px;
+  opacity: 0.85;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
 }
 
 .location-coords {
   display: block;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
+  margin-top: 2px;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .form-row {
@@ -701,100 +954,70 @@ function goBack() {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .form-label ion-icon {
-  font-size: 18px;
+  font-size: 16px;
   color: #667eea;
 }
 
 .custom-textarea,
 .custom-input {
-  --background: #f7fafc;
+  --background: #ffffff !important;
+  --color: #2d3748 !important;
+  --placeholder-color: #a0aec0 !important;
+  --placeholder-opacity: 1 !important;
   --border-radius: 12px;
   --padding-start: 16px;
   --padding-end: 16px;
-  --color: #000000;
-  color: #000000;
-  border: 2px solid #e2e8f0;
+  border: 2px solid #d1d9e6 !important;
   border-radius: 12px;
+  background: #ffffff !important;
+  color: #2d3748 !important;
+  font-size: 15px;
 }
 
 .custom-textarea:focus-within,
 .custom-input:focus-within {
-  border-color: #667eea;
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
 }
 
 .custom-datetime {
-  --background: #f7fafc;
-  border: 2px solid #e2e8f0;
+  --background: #ffffff;
+  --background-rgb: 255, 255, 255;
+  border: 2px solid #d1d9e6;
   border-radius: 12px;
   padding: 8px;
+  color: #2d3748;
 }
 
-.alert {
+.photo-actions {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 12px;
-  margin-bottom: 20px;
-}
-
-.alert ion-icon {
-  font-size: 24px;
-}
-
-.alert-error {
-  background: #fed7d7;
-  color: #c53030;
-}
-
-.alert-success {
-  background: #c6f6d5;
-  color: #2f855a;
-}
-
-.action-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.action-buttons ion-button {
-  --border-radius: 12px;
-  height: 50px;
-  font-weight: 600;
-}
-
-.submit-btn {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-/* Photo Section */
-.photo-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.photo-previews {
-  display: flex;
-  flex-wrap: wrap;
   gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.photos-preview {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
 }
 
 .photo-thumb {
   position: relative;
-  width: 80px;
-  height: 80px;
-  border-radius: 8px;
+  width: 92px;
+  height: 92px;
+  border-radius: 12px;
   overflow: hidden;
-  border: 2px solid #e2e8f0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
 .photo-thumb img {
@@ -805,41 +1028,178 @@ function goBack() {
 
 .remove-photo {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  --padding-start: 0;
-  --padding-end: 0;
+  top: 4px;
+  right: 4px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-gallery h3 { margin: 12px 0 8px; color: #2d3748; }
+.photos-grid { display:flex; gap:12px; flex-wrap:wrap; }
+
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.alert ion-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.alert-error {
+  background: #fff5f5;
+  color: #c53030;
+  border: 1px solid #fed7d7;
+}
+
+.alert-success {
+  background: #f0fff4;
+  color: #2f855a;
+  border: 1px solid #c6f6d5;
+}
+
+.alert-offline {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.action-buttons ion-button {
+  --border-radius: 14px;
+  height: 52px;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+
+.submit-btn {
+  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
+}
+
+/* ============================
+   STATUS CHANGE SECTION
+   ============================ */
+.status-change-section {
+  margin-top: 28px;
+  padding: 20px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f0f4f8;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2d3748;
+}
+
+.section-title ion-icon {
+  font-size: 20px;
+  color: #667eea;
+}
+
+.status-options {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.status-option-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 12px;
+  font-weight: 600;
+  color: #718096;
+}
+
+.status-option-btn ion-icon {
+  font-size: 22px;
+}
+
+.status-option-btn:hover {
+  border-color: #cbd5e0;
+  background: #f0f4f8;
+}
+
+/* Nouveau */
+.status-option-btn.opt-nouveau.active {
+  border-color: #f5576c;
+  background: linear-gradient(135deg, rgba(245,87,108,0.08) 0%, rgba(240,147,251,0.08) 100%);
   color: #e53e3e;
 }
-
-.file-input-hidden {
-  display: none;
+.status-option-btn.opt-nouveau.active ion-icon {
+  color: #f5576c;
 }
 
-.photo-hint {
-  font-size: 12px;
-  color: #718096;
-  margin: 0;
+/* En cours */
+.status-option-btn.opt-encours.active {
+  border-color: #4facfe;
+  background: linear-gradient(135deg, rgba(79,172,254,0.08) 0%, rgba(0,242,254,0.08) 100%);
+  color: #2b6cb0;
+}
+.status-option-btn.opt-encours.active ion-icon {
+  color: #4facfe;
 }
 
-/* Sync Button */
-.sync-btn {
+/* Terminé */
+.status-option-btn.opt-termine.active {
+  border-color: #43e97b;
+  background: linear-gradient(135deg, rgba(67,233,123,0.08) 0%, rgba(56,249,215,0.08) 100%);
+  color: #276749;
+}
+.status-option-btn.opt-termine.active ion-icon {
+  color: #43e97b;
+}
+
+.save-status-btn {
+  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   --border-radius: 12px;
-  font-weight: 600;
+  height: 48px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.3);
 }
 
-.sync-status {
-  text-align: center;
-  font-size: 13px;
-  color: #2f855a;
-  padding: 8px;
-  margin: 0;
-  border-radius: 8px;
-  background: #f0fff4;
-}
-
-.sync-status.sync-error {
-  color: #c53030;
-  background: #fed7d7;
+.save-status-btn[disabled] {
+  opacity: 0.5;
+  box-shadow: none;
 }
 </style>

@@ -72,6 +72,7 @@ services:
     volumes:
       - ./web-map:/app
       - /app/node_modules
+    command: npm start
     depends_on:
       - identity-provider
     networks:
