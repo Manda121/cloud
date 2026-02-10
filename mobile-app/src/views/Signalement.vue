@@ -178,9 +178,9 @@
               {{ errorMsg }}
             </div>
 
-            <div v-if="saved" class="alert alert-success">
-              <ion-icon :icon="checkmarkCircleOutline"></ion-icon>
-              Signalement enregistré avec succès !
+            <div v-if="resultMsg" class="alert" :class="resultType === 'success' ? 'alert-success' : (resultType === 'offline' ? 'alert-offline' : 'alert-error')">
+              <ion-icon :icon="resultType === 'success' ? checkmarkCircleOutline : (resultType === 'offline' ? cloudOfflineOutline : alertCircleOutline)"></ion-icon>
+              {{ resultMsg }}
             </div>
 
             <div class="action-buttons">
@@ -227,9 +227,15 @@ import {
   closeCircleOutline, syncOutline
 } from 'ionicons/icons';
 import { createSignalement, getSignalementById, getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from '../services/signalement';
-import { getAuthToken } from '../services/auth';
-import { prepareAndSavePhoto, PhotoData } from '../services/photo';
-import { fullSync, FullSyncResult } from '../services/sync';
+import { getBackendUrl } from '../services/backend';
+import { getAuthToken, ensureAuthenticated, isAnonymousUser } from '../services/auth';
+import { addPendingStatusUpdate } from '../services/sync';
+import { db } from '../services/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { createNotification } from '../services/notification';
+import { takePhotoFromCamera, pickPhotoFromGallery } from '../composables/usePhotoGallery';
+import { Capacitor } from '@capacitor/core';
+import WebcamCapture from '../components/WebcamCapture.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -245,6 +251,8 @@ const saved = ref(false);
 const viewing = ref(false);
 const remoteData = ref<any | null>(null);
 const errorMsg = ref<string | null>(null);
+const resultMsg = ref<string | null>(null);
+const resultType = ref<'success' | 'offline' | 'error'>('success');
 const loading = ref(false);
 const photos = ref<PhotoData[]>([]);
 const syncing = ref(false);
@@ -314,13 +322,22 @@ function getStatusText(statusId: number) {
 
 async function onSubmit() {
   errorMsg.value = null;
+  resultMsg.value = null;
   loading.value = true;
 
-  const token = getAuthToken();
-  if (!token) {
-    errorMsg.value = 'Vous devez être connecté pour créer un signalement';
+  if (!description.value || !description.value.trim()) {
     loading.value = false;
+    errorMsg.value = 'Veuillez saisir une description.';
     return;
+  }
+
+  // Assurer qu'un utilisateur (même anonyme) est connecté
+  let token: string | null = null;
+  try {
+    token = await ensureAuthenticated();
+  } catch {
+    // Mode totalement offline : on continue sans token
+    token = getAuthToken();
   }
 
   const localId = (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now());
@@ -351,10 +368,41 @@ async function onSubmit() {
       date_signalement: date_signalement.value,
     });
 
-    updateLocalSignalement(localId, {
-      synced: true,
-      id_signalement_server: created.id_signalement,
-    });
+    if ((created as any)?.origin === 'backend') {
+      updateLocalSignalement(localId, {
+        synced: true,
+        id_signalement_server: created.id_signalement,
+        id_statut: (created.id_statut ?? 1),
+      });
+      resultType.value = 'success';
+      resultMsg.value = 'Envoyé au serveur avec succès.';
+    } else {
+      // Fallback Firestore : le doc existe dans Firestore, pas encore côté backend
+      updateLocalSignalement(localId, {
+        synced: true, // ici "synced" = poussé vers Firestore
+        source: 'FIREBASE',
+        firestore_id: created.id_signalement,
+        id_signalement_server: created.id_signalement,
+        id_statut: (created.id_statut ?? 1),
+      });
+      
+      // Créer une notification pour informer que le signalement a été sauvegardé offline
+      try {
+        await createNotification({
+          id_signalement: created.id_signalement,
+          title: 'Signalement enregistré hors-ligne',
+          message: `Votre signalement a été sauvegardé. Il sera synchronisé avec le serveur plus tard.`,
+          latitude: lat.value,
+          longitude: lng.value,
+        });
+        console.log('[Signalement] Notification créée pour signalement offline');
+      } catch (nerr) {
+        console.warn('[Signalement] Échec création notification offline:', nerr);
+      }
+      
+      resultType.value = 'offline';
+      resultMsg.value = 'Serveur indisponible : enregistré sur Firestore. Utilisez “Synchroniser” pour l\'envoyer au serveur plus tard.';
+    }
 
     saved.value = true;
     
@@ -365,7 +413,8 @@ async function onSubmit() {
     setTimeout(() => router.push({ name: 'Carte' }), 800);
   } catch (err: any) {
     console.warn('POST signalement failed, saved locally', err);
-    errorMsg.value = err.message || 'Erreur lors de l\'envoi. Sauvegardé localement.';
+    resultType.value = 'error';
+    resultMsg.value = `Enregistré localement uniquement (non envoyé). ${err?.message ? String(err.message) : ''}`.trim();
     
     try {
       window.dispatchEvent(new CustomEvent('signalement:created', { detail: localSignalement }));
@@ -420,8 +469,85 @@ async function onSync() {
       syncMessage.value = `⚠️ Sync partielle : ${result.errors.join(', ')}`;
     }
   } catch (err: any) {
-    syncError.value = true;
-    syncMessage.value = `❌ Erreur de synchronisation : ${err.message}`;
+    console.error('updateStatus catch:', err);
+
+    // Si le backend est indisponible mais le signalement existe dans Firestore,
+    // écrire le nouveau statut directement dans Firestore (mode offline)
+    if (sig.source === 'FIREBASE' && sig.id_signalement) {
+      try {
+        await updateDoc(doc(db, 'signalements', sig.id_signalement), { id_statut: newStatusId.value, synced: false });
+        remoteData.value.id_statut = newStatusId.value;
+
+        // Créer une notification côté client (Firestore si possible)
+        try {
+          await createNotification({
+            id_signalement: sig.id_signalement,
+            title: `Statut mis à jour : ${getStatusText(newStatusId.value)}`,
+            message: `Le statut du signalement a été changé en ${getStatusText(newStatusId.value)}.`,
+            latitude: remoteData.value?.latitude,
+            longitude: remoteData.value?.longitude,
+          });
+        } catch (nerr) {
+          console.warn('createNotification failed:', nerr);
+        }
+
+        // Ajouter à la file d'attente pour sync ultérieure
+        addPendingStatusUpdate({
+          signalement_id: sig.id_signalement,
+          firestore_id: sig.id_signalement,
+          new_status: newStatusId.value,
+          source: 'FIREBASE',
+        });
+        
+        statusSuccess.value = true;
+        statusOfflineMsg.value = 'Sauvegardé hors-ligne et notification créée. Sera synchronisé automatiquement.';
+        // Notifier le sidebar pour rafraîchir le compteur de notifications
+        window.dispatchEvent(new CustomEvent('notifications:updated'));
+        setTimeout(() => { statusSuccess.value = false; statusOfflineMsg.value = null; }, 4000);
+        statusUpdating.value = false;
+        return;
+      } catch (dbErr: any) {
+        console.error('Failed to update Firestore fallback:', dbErr);
+      }
+    }
+    
+    // Fallback local storage pour signalements locaux
+    if (sig.source === 'LOCAL' || sig.id_signalement) {
+      try {
+        updateLocalSignalement(sig.id_signalement, { id_statut: newStatusId.value });
+        remoteData.value.id_statut = newStatusId.value;
+
+        // Créer une notification locale (stockée en local) pour informer l'utilisateur immédiatement
+        try {
+          await createNotification({
+            id_signalement: sig.id_signalement,
+            title: `Statut mis à jour : ${getStatusText(newStatusId.value)}`,
+            message: `Le statut du signalement a été changé en ${getStatusText(newStatusId.value)} (local).`,
+            latitude: remoteData.value?.latitude,
+            longitude: remoteData.value?.longitude,
+          });
+        } catch (nerr) {
+          console.warn('local createNotification fallback failed:', nerr);
+        }
+
+        addPendingStatusUpdate({
+          signalement_id: sig.id_signalement,
+          new_status: newStatusId.value,
+          source: 'LOCAL',
+        });
+        
+        statusSuccess.value = true;
+        statusOfflineMsg.value = 'Sauvegardé localement et notification créée localement. Sera synchronisé quand le serveur sera disponible.';
+        setTimeout(() => { statusSuccess.value = false; statusOfflineMsg.value = null; }, 4000);
+        statusUpdating.value = false;
+        return;
+      } catch {
+        // Continue to error
+      }
+    }
+
+    statusError.value = err.message || 'Erreur inconnue';
+    setTimeout(() => { statusError.value = null; }, 4000);
   } finally {
     syncing.value = false;
   }

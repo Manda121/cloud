@@ -191,12 +191,79 @@ export async function getAuthStatus(): Promise<{ authMode: string; online: boole
  */
 export async function refreshToken(): Promise<string | null> {
   try {
-    const auth = getFirebaseAuth();
-    const user = auth.currentUser;
-    if (user) {
-      const newToken = await user.getIdToken(true);
-      localStorage.setItem(TOKEN_KEY, newToken);
-      return newToken;
+    const API_BASE = getBackendUrl();
+    const response = await fetch(`${API_BASE}/api/auth/refresh-connectivity`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) throw new Error(`Erreur ${response.status}`);
+    return response.json();
+  } catch {
+    return {
+      authMode: firebaseAuth.currentUser ? 'firebase-direct' : 'disconnected',
+      online: !!firebaseAuth.currentUser,
+    };
+  }
+}
+
+/**
+ * Vérifie si l'utilisateur actuel est anonyme
+ */
+export function isAnonymousUser(): boolean {
+  return firebaseAuth.currentUser?.isAnonymous === true;
+}
+
+/**
+ * Assure qu'un utilisateur Firebase est connecté.
+ * Si aucun utilisateur n'est connecté, effectue un sign-in anonyme.
+ * Retourne le token d'authentification.
+ * 
+ * IMPORTANT: Ne pas écraser une session backend valide avec un sign-in anonyme !
+ */
+export async function ensureAuthenticated(): Promise<string> {
+  const existingToken = getAuthToken();
+  const authMode = getAuthMode();
+
+  // Si déjà connecté via backend avec un token valide, le retourner directement
+  // Ne PAS faire de sign-in anonyme qui écraserait la session !
+  if (existingToken && authMode === 'backend') {
+    // IMPORTANT:
+    // Même en mode backend, Firestore exige une session Firebase (request.auth).
+    // On s'assure donc d'avoir un utilisateur Firebase (anonyme) en parallèle,
+    // sans toucher au token backend stocké.
+    if (!firebaseAuth.currentUser) {
+      try {
+        const cred = await signInAnonymously(firebaseAuth);
+        console.log('[Auth] Session backend + Firebase anonyme active, uid:', cred.user.uid);
+      } catch (err: any) {
+        console.warn('[Auth] Firebase anonyme indisponible (mode backend):', err?.message ?? err);
+      }
+    }
+
+    console.log('[Auth] Session backend valide, token existant utilisé');
+    return existingToken;
+  }
+
+  // Si connecté via firebase-direct avec un currentUser, retourner le token
+  if (existingToken && firebaseAuth.currentUser) {
+    return existingToken;
+  }
+
+  // Si Firebase a un utilisateur mais pas de token local, rafraîchir
+  if (firebaseAuth.currentUser) {
+    try {
+      const token = await firebaseAuth.currentUser.getIdToken(true);
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(AUTH_MODE_KEY, 'firebase-direct');
+      const user: AuthUser = {
+        uid: firebaseAuth.currentUser.uid,
+        email: firebaseAuth.currentUser.email || 'anonyme',
+      };
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      return token;
+    } catch {
+      // Continuer vers sign-in anonyme
     }
     return null;
   } catch (e) {

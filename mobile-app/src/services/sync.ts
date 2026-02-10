@@ -204,19 +204,47 @@ export async function getSyncErrors(limit: number = 20): Promise<{ count: number
 }
 
 /**
- * Récupérer les statistiques de synchronisation
+ * Synchronisation complète :
+ * 1. localStorage → Firestore (si des signalements locaux existent)
+ * 2. Firestore → Backend (si le backend est joignable)
+ * 3. Mises à jour de statut en attente → Backend
+ * 4. Notifications Firestore → Backend
  */
-export async function getSyncStats(): Promise<{ success: boolean; data: SyncStats }> {
-  const response = await fetch(`${API_BASE}/api/sync/stats`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-  });
+export async function fullSync(): Promise<{
+  localToFirestore: number;
+  firestoreToBackend: SyncResult | null;
+  statusUpdates: number;
+  notifications: number;
+}> {
+  // Étape 1 : Local → Firestore
+  const localCount = await syncLocalToFirestore();
 
   if (!response.ok) {
     throw new Error(`Erreur ${response.status}`);
   }
 
-  return response.json();
+  // Étape 3 : Sync des mises à jour de statut en attente
+  let statusUpdatesCount = 0;
+  try {
+    statusUpdatesCount = await syncPendingStatusUpdates();
+  } catch (err: any) {
+    console.warn('[Sync] Status updates sync skipped:', err.message);
+  }
+
+  // Étape 4 : Sync des notifications Firestore → Backend
+  let notificationsCount = 0;
+  try {
+    notificationsCount = await syncNotificationsToBackend();
+  } catch (err: any) {
+    console.warn('[Sync] Notifications sync skipped:', err.message);
+  }
+
+  return {
+    localToFirestore: localCount,
+    firestoreToBackend: backendResult,
+    statusUpdates: statusUpdatesCount,
+    notifications: notificationsCount,
+  };
 }
 
 // ============================================
@@ -611,3 +639,85 @@ export async function fullSync(useBackendToo: boolean = true): Promise<FullSyncR
   console.log(`[Sync] Full sync completed in ${result.duration}ms`, result);
   return result;
 }
+
+// =====================================================
+// SYNCHRONISATION DES NOTIFICATIONS FIRESTORE → BACKEND
+// =====================================================
+
+/**
+ * Synchronise les notifications non synchronisées depuis Firestore vers le backend
+ */
+export async function syncNotificationsToBackend(): Promise<number> {
+  const reachable = await isBackendReachable();
+  if (!reachable) {
+    console.log('[Sync] Backend non joignable, skip sync notifications');
+    return 0;
+  }
+
+  try {
+    await ensureAuthenticated();
+  } catch {
+    // Continue anyway
+  }
+
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    console.log('[Sync] Pas d\'utilisateur Firebase, skip sync notifications');
+    return 0;
+  }
+
+  try {
+    const q = query(
+      collection(db, 'notifications'),
+      where('uid', '==', user.uid),
+      where('synced', '==', false)
+    );
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      console.log('[Sync] Aucune notification à synchroniser');
+      return 0;
+    }
+
+    const token = getAuthToken();
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    let successCount = 0;
+
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      try {
+        const response = await fetch(`${getBackendUrl()}/api/notifications`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            id_signalement: data.id_signalement,
+            title: data.title,
+            message: data.message,
+            latitude: data.latitude,
+            longitude: data.longitude,
+          }),
+        });
+
+        if (response.ok) {
+          // Marquer comme synchronisé dans Firestore
+          await updateDoc(doc(db, 'notifications', docSnap.id), { synced: true });
+          successCount++;
+          console.log('[Sync] Notification synchronisée:', docSnap.id);
+        } else {
+          console.warn('[Sync] Échec sync notification:', docSnap.id, response.status);
+        }
+      } catch (err: any) {
+        console.warn('[Sync] Erreur sync notification:', docSnap.id, err.message);
+      }
+    }
+
+    console.log(`[Sync] ${successCount} notifications synchronisées`);
+    return successCount;
+  } catch (err: any) {
+    console.error('[Sync] Erreur syncNotificationsToBackend:', err.message);
+    return 0;
+  }
+}
+

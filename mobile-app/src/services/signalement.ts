@@ -31,6 +31,8 @@ export interface Signalement {
   source: 'LOCAL' | 'FIREBASE';
   synced: boolean;
   created_at: string;
+  // Métadonnée frontend (non stockée côté backend) pour une UX plus claire
+  origin?: 'backend' | 'firestore';
 }
 
 /**
@@ -48,6 +50,117 @@ function getAuthHeaders(): HeadersInit {
 }
 
 /**
+ * Crée un signalement dans Firestore
+ */
+async function createSignalementFirestore(data: SignalementCreate): Promise<Signalement> {
+  // Tenter de s'authentifier (anonymement si nécessaire)
+  const { ensureAuthenticated } = await import('./auth');
+  try {
+    await ensureAuthenticated();
+  } catch {
+    // Continuer même si l'auth échoue (mode offline)
+  }
+
+  const user = firebaseAuth.currentUser;
+  const uid = user?.uid || 'offline-' + Date.now();
+  const email = user?.email || 'anonyme';
+
+  const docData = {
+    uid: uid,
+    email: email,
+    description: data.description,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    location: new GeoPoint(data.latitude, data.longitude),
+    surface_m2: data.surface_m2 ?? null,
+    budget: data.budget ?? null,
+    date_signalement: data.date_signalement ?? new Date().toISOString().slice(0, 10),
+    photos: data.photos ?? [],
+    source: 'FIREBASE' as const,
+    synced: false, // pas encore synchronisé avec le backend
+    id_statut: 1, // Nouveau
+    created_at: serverTimestamp(),
+  };
+
+  const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION), docData);
+  console.log('[Signalement] Créé dans Firestore:', docRef.id);
+
+  return {
+    id_signalement: docRef.id,
+    id_user: 0,
+    id_statut: 1,
+    description: data.description,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    surface_m2: data.surface_m2,
+    budget: data.budget,
+    date_signalement: data.date_signalement ?? new Date().toISOString().slice(0, 10),
+    source: 'FIREBASE',
+    synced: false,
+    created_at: new Date().toISOString(),
+    origin: 'firestore',
+  };
+}
+
+/**
+ * Récupère les signalements depuis Firestore
+ */
+async function getSignalementsFirestore(): Promise<Signalement[]> {
+  const q = query(collection(db, FIRESTORE_COLLECTION), orderBy('created_at', 'desc'));
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((docSnap) => {
+    const d = docSnap.data();
+    return {
+      id_signalement: docSnap.id,
+      id_user: 0,
+      id_statut: d.id_statut ?? 1,
+      description: d.description ?? '',
+      latitude: d.latitude ?? d.location?.latitude ?? 0,
+      longitude: d.longitude ?? d.location?.longitude ?? 0,
+      surface_m2: d.surface_m2,
+      budget: d.budget,
+      date_signalement: d.date_signalement ?? '',
+      source: 'FIREBASE' as const,
+      synced: d.synced ?? false,
+      created_at: d.created_at instanceof Timestamp
+        ? d.created_at.toDate().toISOString()
+        : d.created_at ?? new Date().toISOString(),
+    };
+  });
+}
+
+/**
+ * Récupère un signalement par ID depuis Firestore
+ */
+async function getSignalementByIdFirestore(id: string): Promise<Signalement> {
+  const docSnap = await getDoc(doc(db, FIRESTORE_COLLECTION, id));
+  if (!docSnap.exists()) throw new Error('Signalement non trouvé');
+
+  const d = docSnap.data();
+  return {
+    id_signalement: docSnap.id,
+    id_user: 0,
+    id_statut: d.id_statut ?? 1,
+    description: d.description ?? '',
+    latitude: d.latitude ?? d.location?.latitude ?? 0,
+    longitude: d.longitude ?? d.location?.longitude ?? 0,
+    surface_m2: d.surface_m2,
+    budget: d.budget,
+    date_signalement: d.date_signalement ?? '',
+    source: 'FIREBASE' as const,
+    synced: d.synced ?? false,
+    created_at: d.created_at instanceof Timestamp
+      ? d.created_at.toDate().toISOString()
+      : d.created_at ?? new Date().toISOString(),
+  };
+}
+
+// =====================================================
+// FONCTIONS HYBRIDES (backend + Firestore fallback)
+// =====================================================
+
+/**
  * Crée un nouveau signalement via l'API
  */
 export async function createSignalement(data: SignalementCreate): Promise<Signalement> {
@@ -57,9 +170,17 @@ export async function createSignalement(data: SignalementCreate): Promise<Signal
     body: JSON.stringify(data),
   });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
-    throw new Error(error.error || `Erreur ${response.status}`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
+        throw new Error(error.error || `Erreur ${response.status}`);
+      }
+
+      const created = await response.json();
+      // Annoter pour l'UX (sans dépendre du schéma backend exact)
+      return { ...(created as any), origin: 'backend' } as Signalement;
+    }
+  } catch (err: any) {
+    console.warn('[Signalement] Backend indisponible, fallback Firestore:', err.message);
   }
 
   return response.json();
