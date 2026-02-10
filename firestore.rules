@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// ========================================================
+// Firestore Security Rules pour le projet Manda
+// ========================================================
+// À copier dans : Firebase Console → Firestore → Rules
+// Projet : miranto-mobile
+// ========================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Signalements ──────────────────────────────────
+    // Lecture et écriture ouvertes pour permettre la synchro
+    // entre le web-map (pas de Firebase Auth) et le mobile-app
+    match /signalements/{docId} {
+      allow read, write: if true;
+    }
+
+    // ── Notifications ─────────────────────────────────
+    match /notifications/{docId} {
+      allow read, write: if true;
+    }
+
+    // Bloquer tout le reste par défaut
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
