@@ -30,14 +30,35 @@ function initFirebase() {
     admin.initializeApp({
       credential: admin.credential.applicationDefault(),
     });
-    console.log('[Firebase Admin] Initialized with application default credentials', {
-      hasGoogleCredentialsPath: !!adcPath,
-      projectId: projectId || undefined,
-    });
-    return admin;
-  } catch (e) {
-    console.error('[Firebase Admin] Initialization failed:', e && e.message ? e.message : e);
-    throw e;
+    console.log('[Firebase] initialized using explicit env vars');
+  } else {
+    // Try loading a service account JSON pointed by GOOGLE_APPLICATION_CREDENTIALS
+    const gaCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (gaCredPath) {
+        const fs = require('fs');
+      try {
+        if (fs.existsSync(gaCredPath)) {
+          const sa = JSON.parse(fs.readFileSync(gaCredPath, 'utf8'));
+          admin.initializeApp({
+            credential: admin.credential.cert(sa),
+          });
+          console.log('[Firebase] initialized using service account JSON', gaCredPath);
+          return admin;
+        } else {
+          console.warn('[Firebase] GOOGLE_APPLICATION_CREDENTIALS set but file not found:', gaCredPath);
+        }
+      } catch (err) {
+        console.warn('[Firebase] Failed to load service account JSON from', gaCredPath, err.message);
+      }
+    }
+    // Fallback to application default credentials (this may produce a warning if project id not found)
+
+    try {
+      admin.initializeApp();
+      console.log('[Firebase] initialized using application default credentials');
+    } catch (e) {
+      // ignore
+    }
   }
 }
 

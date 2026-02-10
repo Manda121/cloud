@@ -1,192 +1,312 @@
 <template>
   <ion-page>
     <ion-header>
-      <ion-toolbar color="primary">
+      <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-menu-button></ion-menu-button>
+          <ion-back-button default-href="/"></ion-back-button>
         </ion-buttons>
-        <ion-title>
-          <div class="header-title">
-            <ion-icon :icon="notificationsOutline"></ion-icon>
-            <span>Notifications</span>
-          </div>
-        </ion-title>
+        <ion-title>Notifications</ion-title>
         <ion-buttons slot="end">
-          <ion-button @click="handleMarkAllRead" v-if="notifications.length > 0" title="Tout marquer comme lu">
+          <ion-button @click="markAllRead" :disabled="unreadCount === 0">
             <ion-icon :icon="checkmarkDoneOutline"></ion-icon>
           </ion-button>
-          <ion-button @click="refreshList" title="Actualiser">
+          <ion-button @click="refreshNotifications">
             <ion-icon :icon="refreshOutline"></ion-icon>
           </ion-button>
         </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="notifications-content">
-      <!-- Loading -->
+    <ion-content>
+      <!-- Badge notifications non lues -->
+      <div v-if="unreadCount > 0" class="unread-banner">
+        <ion-icon :icon="notificationsOutline"></ion-icon>
+        <span>{{ unreadCount }} notification(s) non lue(s)</span>
+      </div>
+
+      <!-- Loading state -->
       <div v-if="loading" class="loading-container">
-        <ion-spinner name="crescent" color="primary"></ion-spinner>
+        <ion-spinner name="crescent"></ion-spinner>
         <p>Chargement des notifications...</p>
       </div>
 
       <!-- Empty state -->
       <div v-else-if="notifications.length === 0" class="empty-state">
-        <div class="empty-icon-wrapper">
-          <ion-icon :icon="notificationsOffOutline" class="empty-icon"></ion-icon>
-        </div>
+        <ion-icon :icon="notificationsOffOutline" class="empty-icon"></ion-icon>
         <h3>Aucune notification</h3>
-        <p>Vous recevrez une notification lorsqu'un statut de signalement change.</p>
+        <p>Vous recevrez des notifications lorsque le statut de vos signalements changera.</p>
       </div>
 
-      <!-- Notifications list -->
-      <div v-else class="notifications-list">
-        <div 
-          v-for="n in notifications" 
-          :key="n.id" 
-          class="notification-card"
-          :class="{ 'unread': !n.read }"
-          @click="handleNotificationClick(n)"
-        >
-          <div class="notif-icon-wrapper" :class="getNotifTypeClass(n)">
-            <ion-icon :icon="getNotifIcon(n)"></ion-icon>
-          </div>
-          <div class="notif-content">
-            <div class="notif-header">
-              <h4>{{ n.title }}</h4>
-              <span class="notif-time">{{ formatTimeAgo(n.created_at) }}</span>
-            </div>
-            <p class="notif-message">{{ n.message }}</p>
-            <div class="notif-meta" v-if="n.latitude && n.longitude">
-              <ion-icon :icon="locationOutline"></ion-icon>
-              <span>{{ Number(n.latitude).toFixed(4) }}, {{ Number(n.longitude).toFixed(4) }}</span>
-            </div>
-          </div>
-          <div class="notif-dot" v-if="!n.read"></div>
-        </div>
-      </div>
+      <!-- Liste des notifications -->
+      <ion-list v-else>
+        <ion-item-sliding v-for="notif in notifications" :key="notif.id">
+          <ion-item 
+            :class="{ 'unread': !notif.read }"
+            @click="openNotification(notif)"
+            button
+          >
+            <ion-icon 
+              :icon="getNotificationIcon(notif.type)" 
+              slot="start"
+              :color="notif.read ? 'medium' : 'primary'"
+            ></ion-icon>
+            
+            <ion-label>
+              <h2>{{ notif.title }}</h2>
+              <p>{{ notif.message }}</p>
+              <p class="notification-time">
+                <ion-icon :icon="timeOutline"></ion-icon>
+                {{ formatDate(notif.created_at) }}
+              </p>
+            </ion-label>
 
-      <!-- Toast -->
+            <ion-badge v-if="!notif.read" color="primary" slot="end">
+              Nouveau
+            </ion-badge>
+          </ion-item>
+
+          <ion-item-options side="end">
+            <ion-item-option color="primary" @click="markAsRead(notif)">
+              <ion-icon :icon="checkmarkOutline"></ion-icon>
+              Lu
+            </ion-item-option>
+            <ion-item-option color="secondary" @click="viewSignalement(notif)">
+              <ion-icon :icon="eyeOutline"></ion-icon>
+              Voir
+            </ion-item-option>
+          </ion-item-options>
+        </ion-item-sliding>
+      </ion-list>
+
+      <!-- Infinite scroll -->
+      <ion-infinite-scroll @ionInfinite="loadMore" :disabled="!hasMore">
+        <ion-infinite-scroll-content
+          loading-spinner="bubbles"
+          loading-text="Chargement..."
+        ></ion-infinite-scroll-content>
+      </ion-infinite-scroll>
+
+      <!-- Toast pour les nouvelles notifications -->
       <ion-toast
-        :is-open="toast.show"
-        :message="toast.message"
-        :color="toast.color"
-        :duration="2000"
-        @didDismiss="toast.show = false"
+        :is-open="showToast"
+        :message="toastMessage"
+        :duration="3000"
+        position="top"
+        color="primary"
+        @didDismiss="showToast = false"
       ></ion-toast>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import {
-  IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButtons,
-  IonButton, IonMenuButton, IonIcon, IonSpinner, IonToast
+  IonPage,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonContent,
+  IonList,
+  IonItem,
+  IonItemSliding,
+  IonItemOptions,
+  IonItemOption,
+  IonLabel,
+  IonIcon,
+  IonBadge,
+  IonButtons,
+  IonButton,
+  IonBackButton,
+  IonSpinner,
+  IonInfiniteScroll,
+  IonInfiniteScrollContent,
+  IonToast,
 } from '@ionic/vue';
 import {
-  notificationsOutline, notificationsOffOutline, refreshOutline,
-  checkmarkDoneOutline, locationOutline, alertCircleOutline,
-  checkmarkCircleOutline, timeOutline, arrowForwardOutline
+  notificationsOutline,
+  notificationsOffOutline,
+  checkmarkOutline,
+  checkmarkDoneOutline,
+  refreshOutline,
+  timeOutline,
+  eyeOutline,
+  alertCircleOutline,
+  checkmarkCircleOutline,
+  hourglassOutline,
+  syncOutline,
 } from 'ionicons/icons';
-import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, Notification } from '../services/notification';
+
+import {
+  getNotifications,
+  getUnreadCount,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  addNotificationListener,
+  type Notification,
+} from '../services/notifications';
 
 const router = useRouter();
+
+// State
 const notifications = ref<Notification[]>([]);
+const unreadCount = ref(0);
 const loading = ref(true);
-const toast = ref({ show: false, message: '', color: 'success' });
+const hasMore = ref(true);
+const offset = ref(0);
+const limit = 20;
+
+// Toast
+const showToast = ref(false);
+const toastMessage = ref('');
+
+// Cleanup function for notification listener
+let unsubscribe: (() => void) | null = null;
+
+// ============================================
+// LIFECYCLE
+// ============================================
 
 onMounted(async () => {
-  await loadNotifications();
+  await refreshNotifications();
+  
+  // Écouter les nouvelles notifications
+  unsubscribe = addNotificationListener((notif) => {
+    toastMessage.value = notif.title;
+    showToast.value = true;
+    
+    // Rafraîchir la liste
+    refreshNotifications();
+  });
 });
 
-async function loadNotifications() {
+onUnmounted(() => {
+  if (unsubscribe) {
+    unsubscribe();
+  }
+});
+
+// ============================================
+// METHODS
+// ============================================
+
+async function refreshNotifications() {
   loading.value = true;
+  offset.value = 0;
+  
   try {
-    console.log('[Notifications] Loading notifications...');
-    const data = await getNotifications();
-    console.log('[Notifications] Received:', JSON.stringify(data));
-    notifications.value = data;
-  } catch (err: any) {
-    console.error('[Notifications] Erreur chargement:', err.message, err);
-    toast.value = { show: true, message: 'Erreur: ' + (err.message || 'Chargement échoué'), color: 'danger' };
+    const response = await getNotifications({ limit, offset: 0 });
+    notifications.value = response.data;
+    unreadCount.value = response.unreadCount;
+    hasMore.value = response.data.length >= limit;
+  } catch (error) {
+    console.error('Error loading notifications:', error);
   } finally {
     loading.value = false;
   }
 }
 
-async function refreshList() {
-  await loadNotifications();
-  toast.value = { show: true, message: 'Notifications actualisées', color: 'success' };
-}
-
-async function handleNotificationClick(n: Notification) {
-  if (!n.read) {
-    try {
-      await markNotificationAsRead(n.id);
-      n.read = true;
-    } catch (err) {
-      console.error('Erreur marquage notification:', err);
-    }
-  }
-  // Navigate to signalement details
-  if (n.id_signalement) {
-    router.push({ name: 'Signalement', query: { id: n.id_signalement } });
+async function loadMore(event: CustomEvent) {
+  offset.value += limit;
+  
+  try {
+    const response = await getNotifications({ limit, offset: offset.value });
+    notifications.value = [...notifications.value, ...response.data];
+    hasMore.value = response.data.length >= limit;
+  } catch (error) {
+    console.error('Error loading more notifications:', error);
+  } finally {
+    (event.target as HTMLIonInfiniteScrollElement).complete();
   }
 }
 
-async function handleMarkAllRead() {
+async function markAsRead(notif: Notification) {
+  if (notif.read) return;
+  
+  try {
+    await markNotificationAsRead(notif.id);
+    notif.read = true;
+    unreadCount.value = Math.max(0, unreadCount.value - 1);
+  } catch (error) {
+    console.error('Error marking as read:', error);
+  }
+}
+
+async function markAllRead() {
   try {
     await markAllNotificationsAsRead();
     notifications.value.forEach(n => n.read = true);
-    toast.value = { show: true, message: 'Toutes les notifications marquées comme lues', color: 'success' };
-    window.dispatchEvent(new CustomEvent('notifications:updated'));
-  } catch (err) {
-    toast.value = { show: true, message: 'Erreur', color: 'danger' };
+    unreadCount.value = 0;
+  } catch (error) {
+    console.error('Error marking all as read:', error);
   }
 }
 
-function getNotifTypeClass(n: Notification) {
-  if (n.title?.includes('En cours')) return 'notif-encours';
-  if (n.title?.includes('Terminé')) return 'notif-termine';
-  return 'notif-default';
+function openNotification(notif: Notification) {
+  markAsRead(notif);
+  
+  // Naviguer vers le signalement si disponible
+  if (notif.id_signalement) {
+    router.push(`/signalement/${notif.id_signalement}`);
+  }
 }
 
-function getNotifIcon(n: Notification) {
-  if (n.title?.includes('Terminé')) return checkmarkCircleOutline;
-  if (n.title?.includes('En cours')) return timeOutline;
-  return alertCircleOutline;
+function viewSignalement(notif: Notification) {
+  if (notif.id_signalement) {
+    router.push(`/signalement/${notif.id_signalement}`);
+  }
 }
 
-function formatTimeAgo(dateStr: string): string {
+function getNotificationIcon(type: string): string {
+  switch (type) {
+    case 'STATUS_CHANGE':
+      return syncOutline;
+    case 'STATUS_COMPLETED':
+      return checkmarkCircleOutline;
+    case 'STATUS_IN_PROGRESS':
+      return hourglassOutline;
+    case 'ALERT':
+      return alertCircleOutline;
+    default:
+      return notificationsOutline;
+  }
+}
+
+function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHrs = Math.floor(diffMs / 3600000);
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMin < 1) return 'À l\'instant';
-  if (diffMin < 60) return `Il y a ${diffMin} min`;
-  if (diffHrs < 24) return `Il y a ${diffHrs}h`;
+  if (diffMins < 1) return "À l'instant";
+  if (diffMins < 60) return `Il y a ${diffMins} min`;
+  if (diffHours < 24) return `Il y a ${diffHours}h`;
   if (diffDays < 7) return `Il y a ${diffDays}j`;
-  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  
+  return date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
 }
 </script>
 
 <style scoped>
-.notifications-content {
-  --background: #f0f2f5;
-}
-
-.header-title {
+.unread-banner {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 12px 16px;
+  background: var(--ion-color-primary);
+  color: white;
+  font-weight: 500;
 }
 
-.header-title ion-icon {
-  font-size: 22px;
+.unread-banner ion-icon {
+  font-size: 20px;
 }
 
 .loading-container {
@@ -194,13 +314,8 @@ function formatTimeAgo(dateStr: string): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 300px;
-  color: #718096;
-}
-
-.loading-container p {
-  margin-top: 12px;
-  font-size: 14px;
+  height: 200px;
+  color: var(--ion-color-medium);
 }
 
 .empty-state {
@@ -208,153 +323,49 @@ function formatTimeAgo(dateStr: string): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 400px;
+  padding: 40px 20px;
   text-align: center;
-  padding: 24px;
-}
-
-.empty-icon-wrapper {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
+  color: var(--ion-color-medium);
 }
 
 .empty-icon {
-  font-size: 40px;
-  color: #a0aec0;
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
 }
 
 .empty-state h3 {
   margin: 0 0 8px;
-  color: #4a5568;
-  font-size: 18px;
+  color: var(--ion-color-dark);
 }
 
 .empty-state p {
   margin: 0;
-  color: #a0aec0;
-  font-size: 14px;
   max-width: 280px;
 }
 
-.notifications-list {
-  padding: 12px;
+ion-item.unread {
+  --background: rgba(var(--ion-color-primary-rgb), 0.05);
 }
 
-.notification-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 16px;
-  margin-bottom: 8px;
-  background: white;
-  border-radius: 14px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.notification-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-1px);
-}
-
-.notification-card.unread {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.04) 0%, rgba(118, 75, 162, 0.04) 100%);
-  border-left: 3px solid #667eea;
-}
-
-.notif-icon-wrapper {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.notif-icon-wrapper ion-icon {
-  font-size: 22px;
-  color: white;
-}
-
-.notif-default {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.notif-encours {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-}
-
-.notif-termine {
-  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-}
-
-.notif-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.notif-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.notif-header h4 {
-  margin: 0;
-  font-size: 14px;
+ion-item.unread ion-label h2 {
   font-weight: 600;
-  color: #2d3748;
 }
 
-.notif-time {
-  font-size: 11px;
-  color: #a0aec0;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.notif-message {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: #718096;
-  line-height: 1.4;
-}
-
-.notif-meta {
+.notification-time {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
-  color: #a0aec0;
-}
-
-.notif-meta ion-icon {
-  font-size: 14px;
-}
-
-.notif-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #667eea;
-  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ion-color-medium);
   margin-top: 4px;
-  animation: pulse 2s infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(0.9); }
+.notification-time ion-icon {
+  font-size: 12px;
+}
+
+ion-item-option ion-icon {
+  font-size: 20px;
 }
 </style>

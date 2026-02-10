@@ -143,4 +143,65 @@ router.get('/status', ctrl.status);
  */
 router.post('/refresh-connectivity', ctrl.refreshConnectivity);
 
+/**
+ * @swagger
+ * /api/auth/blocked-users:
+ *   get:
+ *     summary: Récupérer la liste des utilisateurs bloqués
+ *     responses:
+ *       200:
+ *         description: Liste des utilisateurs bloqués
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id_user:
+ *                     type: string
+ *                   email:
+ *                     type: string
+ *                   firstname:
+ *                     type: string
+ *                   lastname:
+ *                     type: string
+ *                   attempts:
+ *                     type: integer
+ *                   created_at:
+ *                     type: string
+ */
+router.get('/blocked-users', ctrl.getBlockedUsers);
+
+/**
+ * @swagger
+ * /api/auth/unblock/{id}:
+ *   post:
+ *     summary: Débloquer un utilisateur par son ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID de l'utilisateur à débloquer
+ *     responses:
+ *       200:
+ *         description: Utilisateur débloqué
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *                 mode:
+ *                   type: string
+ *       400:
+ *         description: Erreur lors du déblocage
+ */
+router.post('/unblock/:id', ctrl.unblockById);
+
 module.exports = router;

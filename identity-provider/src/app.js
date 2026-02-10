@@ -1,25 +1,25 @@
 const express = require('express');
+const cors = require('cors');
 require('dotenv').config();
 const app = express();
 
-// CORS minimal sans dépendance pour éviter d'installer des paquets
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
 
+}));
+  credentials: true
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  origin: ['http://localhost:3001', 'http://localhost:3002', 'http://localhost', 'http://127.0.0.1:3001', 'http://127.0.0.1:3002', 'http://localhost:5173', 'http://127.0.0.1:5173'],
+app.use(cors({
+// Configuration CORS pour permettre les requêtes cross-origin
 app.use(express.json());
 
 const authRoutes = require('./routes/auth.routes');
-const signalementRoutes = require('./routes/signalement.routes');
-const notificationRoutes = require('./routes/notification.routes');
+const syncRoutes = require('./routes/sync.routes');
+const signalementRoutes = require('./routes/signalements.routes');
 
 app.use('/api/auth', authRoutes);
+app.use('/api/sync', syncRoutes);
 app.use('/api/signalements', signalementRoutes);
-app.use('/api/notifications', notificationRoutes);
 
 // Swagger UI
 const swaggerUi = require('swagger-ui-express');

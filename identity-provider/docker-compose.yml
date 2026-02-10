@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgis/postgis:15-3.4
+    image: postgis/postgis:15-3.3
     container_name: auth_postgres
     environment:
       POSTGRES_USER: auth
@@ -11,7 +11,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./db:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/base.sql:/docker-entrypoint-initdb.d/init.sql
   app:
     build: .
     container_name: identity_provider_app

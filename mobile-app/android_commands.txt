@@ -2,8 +2,8 @@
 cd C:\Users\miran\Documents\ITU_S5\Mr_Rojo\Manda\cloud\mobile-app
 
 # 2. Installer les dépendances du projet
-npm install
 
+npm install
 # 3. Installer Capacitor (si pas déjà fait)
 npm install @capacitor/core @capacitor/cli @capacitor/android --save
 
@@ -27,8 +27,8 @@ npx cap open android
 # (Optionnel) Serveur de dev avec accès depuis mobile
 npm run dev -- --host=0.0.0.0 --port=5173
 
-# --- Commandes de vérification et corrections (exécutées)
 # Vérifier les vulnérabilités
+# --- Commandes de vérification et corrections (exécutées)
 npm audit
 
 # Appliquer les correctifs non-brisants
@@ -47,3 +47,6 @@ npx cap sync android
 # Ouvrir Android Studio
 npx cap open android
 
+
+#installer firebase
+npm install firebase
