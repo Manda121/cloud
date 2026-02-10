@@ -58,6 +58,7 @@ services:
       NODE_ENV: development
       REACT_APP_API_AUTH_URL: http://localhost:3000/api/auth
       REACT_APP_TILE_SERVER_URL: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+      BROWSER: none
       # Variables pour le serveur backend (connexion PostgreSQL)
       DB_HOST: postgres
       DB_PORT: 5432
@@ -71,6 +72,7 @@ services:
     volumes:
       - ./web-map:/app
       - /app/node_modules
+    command: npm start
     depends_on:
       - identity-provider
     networks:
