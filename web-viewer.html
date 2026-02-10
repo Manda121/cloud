@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoadWatch Web - Affichage Signalements</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { color: #2d3748; margin-bottom: 20px; }
+    .loading { text-align: center; padding: 40px; color: #718096; }
+    .error { background: #fed7d7; color: #c53030; padding: 16px; border-radius: 8px; margin-bottom: 20px; }
+    .signalement-card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-header h3 { color: #2d3748; font-size: 16px; }
+    .status-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status-1 { background: #fed7d7; color: #c53030; }
+    .status-2 { background: #fef3c7; color: #b45309; }
+    .status-3 { background: #c6f6d5; color: #276749; }
+    .card-body { padding: 16px; }
+    .card-body p { color: #4a5568; margin-bottom: 12px; line-height: 1.5; }
+    .card-meta { display: flex; gap: 20px; color: #718096; font-size: 14px; margin-bottom: 16px; }
+    .photos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .photo-item {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .photo-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.2s;
+    }
+    .photo-item:hover img { transform: scale(1.05); }
+    .no-photos { color: #a0aec0; font-style: italic; }
+    .login-form {
+      max-width: 400px;
+      margin: 100px auto;
+      background: white;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .login-form h2 { text-align: center; margin-bottom: 24px; color: #2d3748; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; color: #4a5568; font-weight: 500; }
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    .btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-anon {
+      margin-top: 12px;
+      background: #e2e8f0;
+      color: #4a5568;
+    }
+
+    /* Modal zoom photo */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-overlay img { max-width: 90%; max-height: 90%; object-fit: contain; }
+    .modal-close {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      color: white;
+      font-size: 40px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Login Section -->
+  <div id="login-section" class="login-form">
+    <h2>🛣️ RoadWatch Web</h2>
+    <div id="login-error" class="error" style="display:none"></div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="votre@email.com">
+    </div>
+    <div class="form-group">
+      <label>Mot de passe</label>
+      <input type="password" id="password" placeholder="••••••••">
+    </div>
+    <button class="btn" onclick="loginWithEmail()">Se connecter</button>
+    <button class="btn btn-anon" onclick="loginAnonymous()">Continuer sans compte</button>
+  </div>
+
+  <!-- Main Content -->
+  <div id="main-section" class="container" style="display:none">
+    <h1>📍 Signalements</h1>
+    <div id="loading" class="loading">Chargement...</div>
+    <div id="error" class="error" style="display:none"></div>
+    <div id="signalements-list"></div>
+  </div>
+
+  <!-- Photo Modal -->
+  <div id="photo-modal" class="modal-overlay" onclick="closeModal()">
+    <span class="modal-close">&times;</span>
+    <img id="modal-image" src="" alt="Photo">
+  </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+  // Import Firebase
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
+  import { getFirestore, collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
+
+  // ⚠️ IMPORTANT: Remplacez ces valeurs par votre configuration Firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyDSanU3YjNWDby7zWphZZW2O8f2nBxF67Y",
+    authDomain: "miranto-mobile.firebaseapp.com",
+    projectId: "miranto-mobile",
+    storageBucket: "miranto-mobile.firebasestorage.app",
+    messagingSenderId: "561744947732",
+    appId: "1:561744947732:web:d2bb551e7c825f2fb15501"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Exposer les fonctions au scope global
+  window.loginWithEmail = async function() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const errorDiv = document.getElementById('login-error');
+    
+    try {
+      errorDiv.style.display = 'none';
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      errorDiv.textContent = 'Erreur: ' + err.message;
+      errorDiv.style.display = 'block';
+    }
+  };
+
+  window.loginAnonymous = async function() {
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      console.error('Anonymous login failed:', err);
+      alert('Connexion anonyme échouée: ' + err.message);
+    }
+  };
+
+  window.openPhoto = function(url) {
+    document.getElementById('modal-image').src = url;
+    document.getElementById('photo-modal').classList.add('active');
+  };
+
+  window.closeModal = function() {
+    document.getElementById('photo-modal').classList.remove('active');
+  };
+
+  // Auth state listener
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      console.log('Connecté:', user.uid, user.isAnonymous ? '(anonyme)' : user.email);
+      document.getElementById('login-section').style.display = 'none';
+      document.getElementById('main-section').style.display = 'block';
+      loadSignalements();
+    } else {
+      document.getElementById('login-section').style.display = 'block';
+      document.getElementById('main-section').style.display = 'none';
+    }
+  });
+
+  /**
+   * Charge les signalements depuis Firestore et affiche les photos
+   */
+  async function loadSignalements() {
+    const loadingDiv = document.getElementById('loading');
+    const errorDiv = document.getElementById('error');
+    const listDiv = document.getElementById('signalements-list');
+
+    try {
+      loadingDiv.style.display = 'block';
+      errorDiv.style.display = 'none';
+      listDiv.innerHTML = '';
+
+      // Requête Firestore pour récupérer les signalements
+      const q = query(collection(db, 'signalements'), orderBy('created_at', 'desc'));
+      const snapshot = await getDocs(q);
+
+      loadingDiv.style.display = 'none';
+
+      if (snapshot.empty) {
+        listDiv.innerHTML = '<p style="text-align:center;color:#718096;">Aucun signalement trouvé.</p>';
+        return;
+      }
+
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const card = createSignalementCard(doc.id, data);
+        listDiv.appendChild(card);
+      });
+
+    } catch (err) {
+      console.error('Erreur chargement signalements:', err);
+      loadingDiv.style.display = 'none';
+      errorDiv.textContent = 'Erreur: ' + err.message;
+      errorDiv.style.display = 'block';
+    }
+  }
+
+  /**
+   * Crée une carte HTML pour un signalement
+   */
+  function createSignalementCard(id, data) {
+    const card = document.createElement('div');
+    card.className = 'signalement-card';
+
+    const statusText = { 1: 'Nouveau', 2: 'En cours', 3: 'Terminé' };
+    const status = data.id_statut || 1;
+
+    // Récupérer les URLs des photos depuis photo_urls
+    let photosHtml = '<p class="no-photos">Pas de photos</p>';
+    
+    if (data.photo_urls && Array.isArray(data.photo_urls) && data.photo_urls.length > 0) {
+      // ✅ Photos synchronisées vers Firebase Storage
+      photosHtml = '<div class="photos-grid">' +
+        data.photo_urls.map(p => {
+          const url = typeof p === 'string' ? p : (p.url || '');
+          return url ? `<div class="photo-item" onclick="openPhoto('${url}')"><img src="${url}" alt="Photo" loading="lazy"></div>` : '';
+        }).join('') +
+      '</div>';
+    } else if (data.photo_ids && Array.isArray(data.photo_ids) && data.photo_ids.length > 0) {
+      // ⏳ Photos pas encore synchronisées (seulement les IDs locaux)
+      photosHtml = `<p class="no-photos">📱 ${data.photo_ids.length} photo(s) en attente de synchronisation depuis l'appareil mobile</p>`;
+    }
+
+    card.innerHTML = `
+      <div class="card-header">
+        <h3>📍 Signalement</h3>
+        <span class="status-badge status-${status}">${statusText[status] || 'Inconnu'}</span>
+      </div>
+      <div class="card-body">
+        <p>${data.description || 'Pas de description'}</p>
+        <div class="card-meta">
+          <span>📅 ${formatDate(data.date_signalement || data.created_at)}</span>
+          <span>📍 ${data.latitude?.toFixed(4) || '?'}, ${data.longitude?.toFixed(4) || '?'}</span>
+          ${data.surface_m2 ? `<span>📐 ${data.surface_m2} m²</span>` : ''}
+        </div>
+        <h4 style="margin-bottom:8px;color:#4a5568;">Photos:</h4>
+        ${photosHtml}
+      </div>
+    `;
+
+    return card;
+  }
+
+  function formatDate(dateValue) {
+    if (!dateValue) return 'Date inconnue';
+    
+    // Si c'est un Timestamp Firestore
+    if (dateValue.toDate) {
+      return dateValue.toDate().toLocaleDateString('fr-FR');
+    }
+    
+    // Si c'est une string
+    if (typeof dateValue === 'string') {
+      return new Date(dateValue).toLocaleDateString('fr-FR');
+    }
+    
+    return 'Date inconnue';
+  }
+</script>
+
+</body>
+</html>

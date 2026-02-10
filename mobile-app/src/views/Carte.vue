@@ -219,7 +219,7 @@
       case 1: return '#f5576c'; // Nouveau - rouge/rose
       case 2: return '#4facfe'; // En cours - bleu
       case 3: return '#43e97b'; // Terminé - vert
-      default: return '#667eea'; // Default - violet
+      default: return '#f59e0b'; // Default - orange route
     }
   }
 
@@ -296,14 +296,14 @@
     left: 10px;
     right: 10px;
     z-index: 1000;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
     color: white;
     padding: 12px 16px;
     border-radius: 12px;
     display: flex;
     align-items: center;
     gap: 10px;
-    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4);
     animation: slideDown 0.3s ease;
   }
 
@@ -360,7 +360,7 @@
   }
 
   .stat-chip ion-icon {
-    color: #667eea;
+    color: #f59e0b;
     font-size: 18px;
   }
 
@@ -407,7 +407,7 @@
   }
 
   ion-fab-button {
-    --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   }
   </style>
 
@@ -453,7 +453,7 @@
   .popup-btn {
     margin-top: 10px;
     padding: 8px 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     color: white;
     border: none;
     border-radius: 8px;

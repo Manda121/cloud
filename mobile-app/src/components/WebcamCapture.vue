@@ -136,7 +136,7 @@ function close() {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
   color: white;
 }
 
@@ -180,7 +180,7 @@ function close() {
   align-items: center;
   gap: 8px;
   padding: 12px 32px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: white;
   border: none;
   border-radius: 12px;

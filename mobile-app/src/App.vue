@@ -17,39 +17,72 @@
           <!-- User info -->
           <div class="user-card" v-if="currentUser">
             <ion-avatar>
-              <div class="avatar-placeholder">{{ getInitials(currentUser.email) }}</div>
+              <div class="avatar-placeholder" :class="{ 'anon-avatar': isAnonymous }">
+                {{ isAnonymous ? '?' : getInitials(currentUser.email) }}
+              </div>
             </ion-avatar>
             <div class="user-info">
-              <p class="user-email">{{ currentUser.email }}</p>
-              <p class="user-status">
-                <span class="status-dot"></span>
-                Connecté
+              <p class="user-email">{{ isAnonymous ? 'Mode Invité' : currentUser.email }}</p>
+              <p class="user-status" :class="{ 'anon-status': isAnonymous }">
+                <span class="status-dot" :class="{ 'anon-dot': isAnonymous }"></span>
+                {{ isAnonymous ? 'Anonyme' : 'Connecté' }}
               </p>
             </div>
+          </div>
+
+          <!-- Bannière mode anonyme -->
+          <div class="anon-banner" v-if="isLoggedIn && isAnonymous">
+            <ion-icon :icon="personCircleOutline"></ion-icon>
+            <div class="anon-banner-content">
+              <span class="anon-banner-title">Mode invité actif</span>
+              <span class="anon-banner-desc">Créez un compte pour synchroniser</span>
+            </div>
+            <ion-button size="small" fill="solid" color="light" @click="goToLogin">
+              <ion-icon :icon="personAddOutline" slot="start"></ion-icon>
+              Créer
+            </ion-button>
+          </div>
+
+          <!-- Conseils d'utilisation -->
+          <div class="help-tip" v-if="showHelpTip && isLoggedIn">
+            <ion-icon :icon="currentTip.icon" class="tip-icon"></ion-icon>
+            <span class="tip-text">{{ currentTip.text }}</span>
+            <ion-button size="small" fill="clear" @click="nextTip">
+              <ion-icon :icon="arrowForwardOutline"></ion-icon>
+            </ion-button>
           </div>
 
           <div class="menu-section-label" v-if="isLoggedIn">NAVIGATION</div>
 
           <ion-list lines="none" class="menu-list">
             <ion-menu-toggle :auto-hide="false">
-              <ion-item router-link="/carte" router-direction="root" class="menu-item">
+              <ion-item router-link="/carte" router-direction="root" class="menu-item menu-item-highlight">
                 <ion-icon :icon="mapOutline" slot="start"></ion-icon>
-                <ion-label>Carte</ion-label>
+                <ion-label>
+                  Carte
+                  <p class="menu-item-hint">Visualiser et signaler</p>
+                </ion-label>
               </ion-item>
             </ion-menu-toggle>
 
             <ion-menu-toggle :auto-hide="false">
               <ion-item router-link="/signalements" router-direction="root" class="menu-item">
                 <ion-icon :icon="listOutline" slot="start"></ion-icon>
-                <ion-label>Signalements</ion-label>
-                <ion-badge color="primary" slot="end" v-if="signalementCount > 0">{{ signalementCount }}</ion-badge>
+                <ion-label>
+                  Signalements
+                  <p class="menu-item-hint">Vos rapports</p>
+                </ion-label>
+                <ion-badge color="secondary" slot="end" v-if="signalementCount > 0">{{ signalementCount }}</ion-badge>
               </ion-item>
             </ion-menu-toggle>
 
             <ion-menu-toggle :auto-hide="false" v-if="isLoggedIn">
               <ion-item router-link="/notifications" router-direction="root" class="menu-item">
                 <ion-icon :icon="notificationsOutline" slot="start"></ion-icon>
-                <ion-label>Notifications</ion-label>
+                <ion-label>
+                  Notifications
+                  <p class="menu-item-hint">Mises à jour</p>
+                </ion-label>
                 <ion-badge color="danger" slot="end" v-if="unreadNotifCount > 0">{{ unreadNotifCount }}</ion-badge>
               </ion-item>
             </ion-menu-toggle>
@@ -57,7 +90,10 @@
             <ion-menu-toggle :auto-hide="false" v-if="isLoggedIn">
               <ion-item @click="handleSync" class="menu-item" :disabled="syncing">
                 <ion-icon :icon="syncOutline" slot="start"></ion-icon>
-                <ion-label>{{ syncing ? 'Synchronisation...' : 'Synchroniser' }}</ion-label>
+                <ion-label>
+                  {{ syncing ? 'Synchronisation...' : 'Synchroniser' }}
+                  <p class="menu-item-hint">Envoyer vers le cloud</p>
+                </ion-label>
                 <ion-badge color="warning" slot="end" v-if="unsyncedCount > 0">{{ unsyncedCount }}</ion-badge>
                 <ion-spinner v-if="syncing" name="crescent" slot="end" style="width:20px;height:20px"></ion-spinner>
               </ion-item>
@@ -98,23 +134,43 @@
         </ion-content>
       </ion-menu>
 
-      <!-- Main Content -->
-      <ion-router-outlet id="main-content"></ion-router-outlet>
+      <!-- Main Content Area -->
+      <div id="main-content" class="main-content-wrapper">
+        <!-- Bannière globale mode invité -->
+        <div class="global-anon-banner" v-if="isLoggedIn && isAnonymous && !bannerDismissed">
+          <ion-icon :icon="personCircleOutline"></ion-icon>
+          <div class="anon-banner-text">
+            <span class="anon-title">Mode invité - Données temporaires</span>
+            <span class="anon-desc">Créez un compte pour sauvegarder vos signalements de façon permanente</span>
+          </div>
+          <ion-button size="small" fill="solid" color="warning" @click="goToLogin">
+            <ion-icon :icon="personAddOutline" slot="start"></ion-icon>
+            Créer un compte
+          </ion-button>
+          <ion-button size="small" fill="clear" color="light" @click="dismissBanner" class="close-banner-btn">
+            ✕
+          </ion-button>
+        </div>
+        
+        <ion-router-outlet></ion-router-outlet>
+      </div>
     </ion-split-pane>
   </ion-app>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   IonApp, IonRouterOutlet, IonSplitPane, IonMenu, IonHeader, IonToolbar,
   IonTitle, IonContent, IonList, IonItem, IonIcon, IonLabel, IonMenuToggle,
-  IonBadge, IonAvatar, IonSpinner
+  IonBadge, IonAvatar, IonSpinner, IonButton
 } from '@ionic/vue';
 import {
   mapOutline, listOutline, logInOutline, logOutOutline, constructOutline,
-  notificationsOutline, syncOutline, checkmarkCircleOutline, alertCircleOutline
+  notificationsOutline, syncOutline, checkmarkCircleOutline, alertCircleOutline,
+  personCircleOutline, personAddOutline, bulbOutline, arrowForwardOutline,
+  helpCircleOutline, navigateCircleOutline, cloudUploadOutline
 } from 'ionicons/icons';
 import { isAuthenticated, getCurrentUser, logout, AuthUser, ensureAuthenticated, isAnonymousUser } from './services/auth';
 import { getSignalements } from './services/signalement';
@@ -130,6 +186,33 @@ const unsyncedCount = ref(0);
 const syncing = ref(false);
 const syncMessage = ref('');
 const syncMessageType = ref<'success' | 'error' | 'warning'>('success');
+
+// État anonyme et conseils
+const isAnonymous = ref(false);
+const showHelpTip = ref(false);
+const currentTipIndex = ref(0);
+const bannerDismissed = ref(false);
+
+const helpTips = [
+  { icon: navigateCircleOutline, text: "Cliquez sur la carte pour signaler un problème routier" },
+  { icon: cloudUploadOutline, text: "Utilisez 'Synchroniser' pour envoyer vos données vers le cloud" },
+  { icon: personAddOutline, text: "Créez un compte pour accéder à toutes les fonctionnalités" },
+];
+
+const currentTip = computed(() => helpTips[currentTipIndex.value]);
+
+function nextTip() {
+  currentTipIndex.value = (currentTipIndex.value + 1) % helpTips.length;
+}
+
+function goToLogin() {
+  router.push('/login');
+}
+
+function dismissBanner() {
+  bannerDismissed.value = true;
+  // Gardé en mémoire pour cette session uniquement
+}
 
 onMounted(async () => {
   // Auto-auth anonyme si personne n'est connecté
@@ -159,6 +242,12 @@ window.addEventListener('notifications:updated', () => {
 function checkAuth() {
   isLoggedIn.value = isAuthenticated();
   currentUser.value = getCurrentUser();
+  isAnonymous.value = isAnonymousUser();
+  
+  // Afficher les conseils pour les nouveaux utilisateurs
+  if (isLoggedIn.value && !localStorage.getItem('helpTipsSeen')) {
+    showHelpTip.value = true;
+  }
 }
 
 async function loadSignalementCount() {
@@ -203,11 +292,13 @@ async function handleSync() {
     const fbToBackend = result.firestoreToBackend?.synced ?? 0;
     const localToFirestore = result.localToFirestore ?? 0;
     const statusUpdates = (result as any).statusUpdates ?? 0;
-    const totalSynced = fbToBackend + localToFirestore + statusUpdates;
+    const photosToStorage = (result as any).photosToStorage ?? 0;
+    const totalSynced = fbToBackend + localToFirestore + statusUpdates + photosToStorage;
 
     if (totalSynced > 0) {
       const parts = [];
       if (localToFirestore) parts.push(`${localToFirestore} poussés vers Firestore`);
+      if (photosToStorage) parts.push(`${photosToStorage} photo(s) uploadées vers le cloud`);
       if (fbToBackend) parts.push(`${fbToBackend} synchronisés vers le backend`);
       if (statusUpdates) parts.push(`${statusUpdates} mises à jour de statut envoyées`);
       syncMessage.value = parts.join(' • ');
@@ -219,7 +310,7 @@ async function handleSync() {
         syncMessage.value = `Rien à synchroniser maintenant. ${pending} mise(s) à jour en attente`;
         syncMessageType.value = 'warning';
       } else {
-        syncMessage.value = 'Tout est déjà à jour';
+        syncMessage.value = 'Tout est déjà à jour ✓';
         syncMessageType.value = 'success';
       }
     }
@@ -250,27 +341,27 @@ function getInitials(email: string): string {
 
 <style>
 /* ============================
-   GLOBAL DESIGN SYSTEM
+   GLOBAL DESIGN SYSTEM - ROAD THEME
    ============================ */
 :root {
-  --ion-color-primary: #667eea;
-  --ion-color-primary-rgb: 102, 126, 234;
+  --ion-color-primary: #2d3748;
+  --ion-color-primary-rgb: 45, 55, 72;
   --ion-color-primary-contrast: #ffffff;
-  --ion-color-primary-shade: #5a6fd3;
-  --ion-color-primary-tint: #7a8eec;
+  --ion-color-primary-shade: #1a202c;
+  --ion-color-primary-tint: #4a5568;
 
-  --ion-color-secondary: #764ba2;
-  --ion-color-secondary-rgb: 118, 75, 162;
+  --ion-color-secondary: #f59e0b;
+  --ion-color-secondary-rgb: 245, 158, 11;
   --ion-color-secondary-contrast: #ffffff;
 
   --ion-background-color: #f0f2f5;
   --ion-card-background: #ffffff;
-  --ion-toolbar-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --ion-toolbar-background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
   --ion-toolbar-color: #ffffff;
   
   --app-sidebar-bg: #0f1629;
-  --app-sidebar-hover: rgba(102, 126, 234, 0.12);
-  --app-sidebar-active: rgba(102, 126, 234, 0.2);
+  --app-sidebar-hover: rgba(245, 158, 11, 0.12);
+  --app-sidebar-active: rgba(245, 158, 11, 0.2);
   --app-text-primary: #1a202c;
   --app-text-secondary: #718096;
   --app-text-muted: #a0aec0;
@@ -285,7 +376,7 @@ function getInitials(email: string): string {
    TOOLBAR
    ============================ */
 ion-toolbar {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
   --color: white;
 }
 
@@ -303,7 +394,7 @@ ion-menu ion-content {
 }
 
 ion-menu ion-toolbar {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
   --min-height: 60px;
 }
 
@@ -327,15 +418,15 @@ ion-menu ion-toolbar {
   gap: 14px;
   padding: 20px 20px 16px;
   margin: 16px 14px 8px;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.15) 100%);
   border-radius: 16px;
-  border: 1px solid rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.1);
 }
 
 .avatar-placeholder {
   width: 46px;
   height: 46px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   border-radius: 14px;
   display: flex;
   align-items: center;
@@ -343,7 +434,7 @@ ion-menu ion-toolbar {
   color: white;
   font-size: 18px;
   font-weight: 700;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
 }
 
 .user-info {
@@ -426,7 +517,7 @@ ion-menu ion-toolbar {
 }
 
 .menu-item ion-icon {
-  color: #667eea;
+  color: #f59e0b;
   font-size: 20px;
   margin-right: 4px;
 }
@@ -437,7 +528,7 @@ ion-menu ion-toolbar {
 }
 
 .menu-item.router-link-active ion-icon {
-  color: #818cf8;
+  color: #fbbf24;
 }
 
 .menu-item-danger:hover {
@@ -471,7 +562,7 @@ ion-menu ion-toolbar {
 
 .footer-brand ion-icon {
   font-size: 14px;
-  color: #667eea;
+  color: #f59e0b;
 }
 
 .menu-footer .copyright {
@@ -496,7 +587,7 @@ ion-input input,
 ion-textarea textarea,
 ion-textarea .native-textarea {
   color: var(--app-input-text) !important;
-  caret-color: #667eea !important;
+  caret-color: #f59e0b !important;
 }
 
 ion-input .native-input::placeholder,
@@ -524,8 +615,8 @@ ion-textarea .native-textarea::placeholder {
 
 .custom-input:focus-within,
 .custom-textarea:focus-within {
-  border-color: #667eea !important;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
 }
 
 /* Modal inputs */
@@ -612,12 +703,12 @@ ion-router-outlet {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(102, 126, 234, 0.2);
+  background: rgba(245, 158, 11, 0.2);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(102, 126, 234, 0.4);
+  background: rgba(245, 158, 11, 0.4);
 }
 
 /* ============================
@@ -655,6 +746,189 @@ ion-router-outlet {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================
+   ANONYMOUS BANNER
+   ============================ */
+.anon-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 14px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.2) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 14px;
+}
+
+.anon-banner > ion-icon {
+  font-size: 28px;
+  color: #f59e0b;
+}
+
+.anon-banner-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.anon-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+.anon-banner-desc {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.anon-banner ion-button {
+  --background: #f59e0b;
+  --color: white;
+  font-size: 12px;
+  height: 32px;
+}
+
+/* ============================
+   HELP TIPS
+   ============================ */
+.help-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 14px;
+  padding: 12px 14px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 12px;
+}
+
+.help-tip .tip-icon {
+  font-size: 22px;
+  color: #10b981;
+}
+
+.help-tip .tip-text {
+  flex: 1;
+  font-size: 12px;
+  color: #e2e8f0;
+  line-height: 1.4;
+}
+
+.help-tip ion-button {
+  --color: #10b981;
+}
+
+/* ============================
+   MENU ITEM HINTS
+   ============================ */
+.menu-item-hint {
+  font-size: 10px;
+  color: #64748b;
+  margin: 2px 0 0;
+  font-weight: 400;
+}
+
+.menu-item-highlight {
+  position: relative;
+}
+
+.menu-item-highlight::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  background: #f59e0b;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+/* ============================
+   ANONYMOUS USER STYLING
+   ============================ */
+.anon-avatar {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%) !important;
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.4) !important;
+}
+
+.anon-status {
+  color: #f59e0b !important;
+}
+
+.anon-dot {
+  background: #f59e0b !important;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6) !important;
+}
+
+.sync-message.warning {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+}
+
+/* ============================
+   GLOBAL ANONYMOUS BANNER
+   ============================ */
+.main-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.main-content-wrapper ion-router-outlet {
+  flex: 1;
+}
+
+.global-anon-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.global-anon-banner > ion-icon {
+  font-size: 28px;
+  opacity: 0.9;
+}
+
+.global-anon-banner .anon-banner-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.global-anon-banner .anon-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.global-anon-banner .anon-desc {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.global-anon-banner ion-button[color="warning"] {
+  --background: white;
+  --color: #d97706;
+  font-weight: 600;
+}
+
+.global-anon-banner .close-banner-btn {
+  --color: white;
+  opacity: 0.8;
+  font-size: 16px;
+  min-width: 28px;
+  margin-left: 4px;
 }
 </style>
 

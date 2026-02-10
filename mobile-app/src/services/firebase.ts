@@ -7,6 +7,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
 // Configuration Firebase - récupérée depuis les variables d'environnement
 // Ces valeurs sont publiques (côté client) et sont sécurisées par les Firebase Security Rules
@@ -27,12 +28,14 @@ const app = initializeApp(firebaseConfig);
 // Initialiser les services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 
 // Pour le développement local avec émulateurs Firebase (optionnel)
 const useEmulators = (import.meta as any).env?.VITE_USE_FIREBASE_EMULATORS === 'true';
 if (useEmulators) {
   connectAuthEmulator(auth, 'http://localhost:9099');
   connectFirestoreEmulator(db, 'localhost', 8080);
+  connectStorageEmulator(storage, 'localhost', 9199);
   console.log('[Firebase Client] Connected to local emulators');
 }
 
@@ -42,6 +45,7 @@ export function logFirebaseClientDiagnostics(): void {
   console.log('[Diag] Firebase useEmulators:', useEmulatorsNow);
   console.log('[Diag] Firebase auth uid:', auth.currentUser?.uid ?? null);
   console.log('[Diag] Firebase auth isAnonymous:', auth.currentUser?.isAnonymous === true);
+  console.log('[Diag] Firebase storageBucket:', firebaseConfig.storageBucket || null);
 }
 
 export default app;

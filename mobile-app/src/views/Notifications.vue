@@ -299,8 +299,8 @@ function formatTimeAgo(dateStr: string): string {
 }
 
 .notification-card.unread {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.04) 0%, rgba(118, 75, 162, 0.04) 100%);
-  border-left: 3px solid #667eea;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.04) 0%, rgba(217, 119, 6, 0.04) 100%);
+  border-left: 3px solid #f59e0b;
 }
 
 .notif-icon-wrapper {
@@ -319,7 +319,7 @@ function formatTimeAgo(dateStr: string): string {
 }
 
 .notif-default {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
 }
 
 .notif-encours {
@@ -380,7 +380,7 @@ function formatTimeAgo(dateStr: string): string {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #667eea;
+  background: #f59e0b;
   flex-shrink: 0;
   margin-top: 4px;
   animation: pulse 2s infinite;

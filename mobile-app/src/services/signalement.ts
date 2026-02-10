@@ -13,6 +13,7 @@ import { getAuthToken, getAuthMode, refreshToken } from './auth';
 import { isBackendReachable, getBackendUrl } from './backend';
 import { db } from './firebase';
 import { auth as firebaseAuth } from './firebase';
+import { savePhotos, getPhotosData, updatePhotosSignalementId } from './photoStorage';
 import {
   collection,
   addDoc,
@@ -37,6 +38,7 @@ export interface SignalementCreate {
   longitude: number;
   surface_m2?: number;
   budget?: number;
+  prix_m2?: number;
   date_signalement?: string;
   source?: 'LOCAL' | 'FIREBASE';
   photos?: string[];
@@ -98,6 +100,20 @@ async function createSignalementFirestore(data: SignalementCreate): Promise<Sign
   const uid = user?.uid || 'offline-' + Date.now();
   const email = user?.email || 'anonyme';
 
+  // Générer un ID pour le signalement avant création
+  const tempId = `sig_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // Sauvegarder les photos dans IndexedDB (compressées) au lieu de Firestore
+  let photoIds: string[] = [];
+  if (data.photos && data.photos.length > 0) {
+    try {
+      photoIds = await savePhotos(tempId, data.photos);
+      console.log('[Signalement] Photos sauvegardées dans IndexedDB:', photoIds.length);
+    } catch (err) {
+      console.warn('[Signalement] Échec sauvegarde photos IndexedDB:', err);
+    }
+  }
+
   const docData = {
     uid: uid,
     email: email,
@@ -107,8 +123,12 @@ async function createSignalementFirestore(data: SignalementCreate): Promise<Sign
     location: new GeoPoint(data.latitude, data.longitude),
     surface_m2: data.surface_m2 ?? null,
     budget: data.budget ?? null,
+    prix_m2: data.prix_m2 ?? null,
     date_signalement: data.date_signalement ?? new Date().toISOString().slice(0, 10),
-    photos: data.photos ?? [],
+    // Stocker uniquement les IDs des photos (pas les données base64)
+    photo_ids: photoIds,
+    photo_urls: [],
+    photos: [], // Vide pour éviter la limite Firestore de 1MB
     source: 'FIREBASE' as const,
     synced: false, // pas encore synchronisé avec le backend
     id_statut: 1, // Nouveau
@@ -117,6 +137,15 @@ async function createSignalementFirestore(data: SignalementCreate): Promise<Sign
 
   const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION), docData);
   console.log('[Signalement] Créé dans Firestore:', docRef.id);
+
+  // Mettre à jour le signalement_id dans les photos stockées
+  if (photoIds.length > 0) {
+    try {
+      await updatePhotosSignalementId(photoIds, docRef.id);
+    } catch (err) {
+      console.warn('[Signalement] Échec mise à jour photo IDs:', err);
+    }
+  }
 
   return {
     id_signalement: docRef.id,
@@ -438,10 +467,45 @@ export function getLocalSignalements(): any[] {
   }
 }
 
-export function saveLocalSignalement(signalement: any): void {
+export async function saveLocalSignalement(signalement: any): Promise<void> {
   const list = getLocalSignalements();
+
+  // Si le signalement contient des photos (base64), les sauvegarder dans IndexedDB
+  try {
+    if (signalement.photos && Array.isArray(signalement.photos) && signalement.photos.length > 0) {
+      const { savePhotos } = await import('./photoStorage');
+      try {
+        const photoIds = await savePhotos(signalement.id_signalement, signalement.photos);
+        // Remplacer les données base64 par des références
+        signalement.photo_ids = photoIds;
+        delete signalement.photos;
+        console.log('[Signalement] Photos locales déplacées vers IndexedDB, ids:', photoIds);
+      } catch (err) {
+        console.warn('[Signalement] Échec sauvegarde photos dans IndexedDB:', err);
+        // Si échec, garder les photos en mémoire mais éviter planter l'enregistrement local
+      }
+    }
+  } catch (err) {
+    console.warn('[Signalement] Erreur lors du traitement des photos locales:', err);
+  }
+
   list.push(signalement);
-  localStorage.setItem('signalements', JSON.stringify(list));
+
+  try {
+    localStorage.setItem('signalements', JSON.stringify(list));
+  } catch (err: any) {
+    // Gestion de l'erreur de quota : supprimer les champs lourds et retenter
+    console.warn('[Signalement] Quota dépassé lors du saveLocalSignalement, tentative de fallback');
+    for (const s of list) {
+      if (s.photos) delete s.photos;
+    }
+    try {
+      localStorage.setItem('signalements', JSON.stringify(list));
+      console.log('[Signalement] Sauvegarde locale réussie après suppression des champs lourds');
+    } catch (err2) {
+      console.error('[Signalement] Sauvegarde locale échouée même après fallback:', err2);
+    }
+  }
 }
 
 export function updateLocalSignalement(id: string, updates: Partial<any>): void {

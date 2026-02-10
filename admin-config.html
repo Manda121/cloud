@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoadWatch Admin - Configuration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      background: #f5f7fa; 
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+      color: white;
+      padding: 20px;
+    }
+    .header h1 { display: flex; align-items: center; gap: 12px; }
+    .container { max-width: 800px; margin: 0 auto; padding: 24px; }
+    
+    .card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .card-header {
+      background: linear-gradient(135deg, rgba(45, 55, 72, 0.05) 0%, rgba(74, 85, 104, 0.08) 100%);
+      padding: 20px 24px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .card-header h2 { color: #2d3748; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+    .card-body { padding: 24px; }
+    
+    .config-item {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 0;
+      border-bottom: 1px solid #f0f4f8;
+    }
+    .config-item:last-child { border-bottom: none; }
+    .config-info { flex: 1; }
+    .config-label { font-weight: 600; color: #2d3748; margin-bottom: 4px; }
+    .config-desc { font-size: 13px; color: #718096; }
+    .config-input {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .config-input input {
+      width: 150px;
+      padding: 12px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      text-align: right;
+    }
+    .config-input input:focus {
+      outline: none;
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+    }
+    .config-input .unit { color: #718096; font-weight: 500; }
+    
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    
+    .alert {
+      padding: 14px 18px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .alert-success { background: #c6f6d5; color: #276749; }
+    .alert-error { background: #fed7d7; color: #c53030; }
+    .alert-info { background: #bee3f8; color: #2b6cb0; }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+    }
+    .stat-value { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .stat-label { font-size: 13px; opacity: 0.8; }
+    
+    .login-form {
+      max-width: 400px;
+      margin: 80px auto;
+      background: white;
+      padding: 32px;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    .login-form h2 { text-align: center; margin-bottom: 24px; color: #2d3748; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 8px; color: #4a5568; font-weight: 500; }
+    .form-group input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #f59e0b;
+    }
+    
+    .preview-section {
+      margin-top: 20px;
+      padding: 16px;
+      background: #f7fafc;
+      border-radius: 10px;
+    }
+    .preview-title { font-size: 13px; color: #718096; margin-bottom: 8px; }
+    .preview-example {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px dashed #e2e8f0;
+    }
+    .preview-example:last-child { border-bottom: none; }
+    .preview-surface { color: #4a5568; }
+    .preview-cost { font-weight: 600; color: #2d3748; }
+    
+    #loading { text-align: center; padding: 40px; color: #718096; }
+    
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Login Section -->
+  <div id="login-section" class="login-form">
+    <h2>🔧 Administration RoadWatch</h2>
+    <div id="login-error" class="alert alert-error hidden"></div>
+    <div class="form-group">
+      <label>Email Manager</label>
+      <input type="email" id="email" placeholder="manager@roadwatch.com">
+    </div>
+    <div class="form-group">
+      <label>Mot de passe</label>
+      <input type="password" id="password" placeholder="••••••••">
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="loginManager()">Connexion Manager</button>
+  </div>
+
+  <!-- Admin Section -->
+  <div id="admin-section" class="hidden">
+    <div class="header">
+      <h1>⚙️ Configuration RoadWatch</h1>
+    </div>
+    
+    <div class="container">
+      <div id="message" class="hidden"></div>
+      
+      <!-- Stats rapides -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">-</div>
+          <div class="stat-label">Signalements</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-surface">-</div>
+          <div class="stat-label">Surface totale (m²)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-budget">-</div>
+          <div class="stat-label">Budget total (Ar)</div>
+        </div>
+      </div>
+      
+      <!-- Configuration Prix -->
+      <div class="card">
+        <div class="card-header">
+          <h2>💰 Tarification</h2>
+        </div>
+        <div class="card-body">
+          <div class="config-item">
+            <div class="config-info">
+              <div class="config-label">Prix par mètre carré</div>
+              <div class="config-desc">Ce tarif est utilisé pour calculer automatiquement le coût estimé des réparations dans l'application mobile.</div>
+            </div>
+            <div class="config-input">
+              <input type="number" id="prix-m2" value="15000" min="1000" step="1000">
+              <span class="unit">Ar/m²</span>
+            </div>
+          </div>
+          
+          <div class="preview-section">
+            <div class="preview-title">Exemples de calcul</div>
+            <div class="preview-example">
+              <span class="preview-surface">1 m²</span>
+              <span class="preview-cost" id="preview-1m2">15 000 Ar</span>
+            </div>
+            <div class="preview-example">
+              <span class="preview-surface">5 m²</span>
+              <span class="preview-cost" id="preview-5m2">75 000 Ar</span>
+            </div>
+            <div class="preview-example">
+              <span class="preview-surface">10 m²</span>
+              <span class="preview-cost" id="preview-10m2">150 000 Ar</span>
+            </div>
+            <div class="preview-example">
+              <span class="preview-surface">50 m²</span>
+              <span class="preview-cost" id="preview-50m2">750 000 Ar</span>
+            </div>
+          </div>
+          
+          <div style="margin-top: 24px; text-align: right;">
+            <button class="btn btn-primary" id="save-btn" onclick="saveConfig()">
+              Enregistrer les modifications
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h2>ℹ️ Informations</h2>
+        </div>
+        <div class="card-body">
+          <p style="color: #4a5568; line-height: 1.6;">
+            Le prix par m² est utilisé par l'application mobile pour calculer automatiquement le budget estimé 
+            lors de la création d'un nouveau signalement. L'utilisateur n'a qu'à entrer la surface du dommage, 
+            et le coût est calculé automatiquement.
+          </p>
+          <p style="color: #718096; font-size: 14px; margin-top: 12px;">
+            Dernière mise à jour : <span id="last-update">-</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
+  import { getFirestore, doc, getDoc, setDoc, collection, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
+
+  // ⚠️ IMPORTANT: Remplacez ces valeurs par votre configuration Firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyDcQU6GXTA-example",
+    authDomain: "your-project.firebaseapp.com",
+    projectId: "miranto-mobile",
+    storageBucket: "your-project.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "1:123456789:web:abc123"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Référence globale
+  window.auth = auth;
+  window.db = db;
+
+  // État
+  let currentPrix = 15000;
+
+  // Écouter les changements d'auth
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      document.getElementById('login-section').classList.add('hidden');
+      document.getElementById('admin-section').classList.remove('hidden');
+      await loadConfig();
+      await loadStats();
+    } else {
+      document.getElementById('login-section').classList.remove('hidden');
+      document.getElementById('admin-section').classList.add('hidden');
+    }
+  });
+
+  // Login manager
+  window.loginManager = async function() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const errorDiv = document.getElementById('login-error');
+
+    try {
+      errorDiv.classList.add('hidden');
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      errorDiv.textContent = 'Erreur: ' + err.message;
+      errorDiv.classList.remove('hidden');
+    }
+  };
+
+  // Charger la configuration depuis Firestore
+  async function loadConfig() {
+    try {
+      const configRef = doc(db, 'configuration', 'tarifs');
+      const configDoc = await getDoc(configRef);
+      
+      if (configDoc.exists()) {
+        const data = configDoc.data();
+        currentPrix = data.prix_m2 || 15000;
+        document.getElementById('prix-m2').value = currentPrix;
+        updatePreviews(currentPrix);
+        
+        if (data.updated_at) {
+          const date = data.updated_at.toDate();
+          document.getElementById('last-update').textContent = date.toLocaleString('fr-FR');
+        }
+      } else {
+        // Créer le document de configuration par défaut
+        await setDoc(configRef, {
+          prix_m2: 15000,
+          updated_at: serverTimestamp()
+        });
+      }
+    } catch (err) {
+      console.error('Erreur chargement config:', err);
+      showMessage('Erreur lors du chargement de la configuration', 'error');
+    }
+  }
+
+  // Charger les statistiques
+  async function loadStats() {
+    try {
+      const signalements = await getDocs(collection(db, 'signalements'));
+      let total = 0;
+      let surfaceTotal = 0;
+      let budgetTotal = 0;
+
+      signalements.forEach(doc => {
+        const data = doc.data();
+        total++;
+        if (data.surface_m2) surfaceTotal += Number(data.surface_m2);
+        if (data.budget) budgetTotal += Number(data.budget);
+      });
+
+      document.getElementById('stat-total').textContent = total;
+      document.getElementById('stat-surface').textContent = surfaceTotal.toLocaleString();
+      document.getElementById('stat-budget').textContent = budgetTotal.toLocaleString();
+    } catch (err) {
+      console.error('Erreur chargement stats:', err);
+    }
+  }
+
+  // Sauvegarder la configuration
+  window.saveConfig = async function() {
+    const prixInput = document.getElementById('prix-m2');
+    const prix = parseInt(prixInput.value);
+    const saveBtn = document.getElementById('save-btn');
+
+    if (!prix || prix < 1000) {
+      showMessage('Le prix doit être au moins 1000 Ar/m²', 'error');
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Enregistrement...';
+
+    try {
+      const configRef = doc(db, 'configuration', 'tarifs');
+      await setDoc(configRef, {
+        prix_m2: prix,
+        updated_at: serverTimestamp()
+      }, { merge: true });
+
+      currentPrix = prix;
+      document.getElementById('last-update').textContent = new Date().toLocaleString('fr-FR');
+      showMessage('Configuration enregistrée avec succès !', 'success');
+    } catch (err) {
+      console.error('Erreur sauvegarde:', err);
+      showMessage('Erreur: ' + err.message, 'error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Enregistrer les modifications';
+    }
+  };
+
+  // Mettre à jour les aperçus de calcul
+  function updatePreviews(prix) {
+    document.getElementById('preview-1m2').textContent = (prix * 1).toLocaleString() + ' Ar';
+    document.getElementById('preview-5m2').textContent = (prix * 5).toLocaleString() + ' Ar';
+    document.getElementById('preview-10m2').textContent = (prix * 10).toLocaleString() + ' Ar';
+    document.getElementById('preview-50m2').textContent = (prix * 50).toLocaleString() + ' Ar';
+  }
+
+  // Écouter les changements du prix
+  document.getElementById('prix-m2').addEventListener('input', (e) => {
+    const prix = parseInt(e.target.value) || 0;
+    updatePreviews(prix);
+  });
+
+  // Afficher un message
+  function showMessage(text, type) {
+    const msgDiv = document.getElementById('message');
+    msgDiv.className = 'alert alert-' + type;
+    msgDiv.textContent = text;
+    msgDiv.classList.remove('hidden');
+    
+    setTimeout(() => {
+      msgDiv.classList.add('hidden');
+    }, 5000);
+  }
+</script>
+
+</body>
+</html>

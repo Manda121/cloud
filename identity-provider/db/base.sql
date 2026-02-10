@@ -127,5 +127,19 @@ CREATE INDEX IF NOT EXISTS idx_signalements_user ON signalements(id_user);
 -- Index pour rechercher par firebase_uid
 CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
 
+-- Table de configuration globale (prix par m², etc.)
+CREATE TABLE IF NOT EXISTS configuration (
+    id_config SERIAL PRIMARY KEY,
+    cle VARCHAR(50) UNIQUE NOT NULL,
+    valeur TEXT NOT NULL,
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Prix par m² par défaut (en Ariary)
+INSERT INTO configuration (cle, valeur, description) VALUES
+('prix_m2', '15000', 'Prix de réparation par m² en Ariary')
+ON CONFLICT (cle) DO NOTHING;
+
 
 

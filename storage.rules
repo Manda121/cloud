@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Photos uploadées par l'app: photos/{uid}/{signalementId}/{photoId}.jpg
+    match /photos/{uid}/{signalementId}/{fileName} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Par défaut: tout refuser
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

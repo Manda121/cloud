@@ -174,12 +174,12 @@ function goToRegister() {
   width: 80px;
   height: 80px;
   margin: 0 auto 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 10px 30px rgba(245, 158, 11, 0.4);
 }
 
 .logo-circle ion-icon {
@@ -223,7 +223,7 @@ function goToRegister() {
 
 .form-label ion-icon {
   font-size: 18px;
-  color: #667eea;
+  color: #f59e0b;
 }
 
 .input-wrapper {
@@ -248,8 +248,8 @@ function goToRegister() {
 }
 
 .custom-input:focus-within {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
 }
 
 .toggle-password {
@@ -277,7 +277,7 @@ function goToRegister() {
 }
 
 .submit-btn {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   --border-radius: 12px;
   height: 50px;
   font-weight: 600;

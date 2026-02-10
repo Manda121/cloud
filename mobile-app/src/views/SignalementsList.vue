@@ -353,12 +353,12 @@ function getStatusClass(id: number | string): string {
 }
 
 .stat-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
   border-radius: 14px;
   padding: 16px 12px;
   text-align: center;
   color: white;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
   transition: transform 0.2s ease;
 }
 
@@ -538,8 +538,8 @@ function getStatusClass(id: number | string): string {
 }
 
 .modal-input:focus-within {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
 }
 
 .modal-select {
@@ -559,16 +559,16 @@ function getStatusClass(id: number | string): string {
 }
 
 .modal-save-btn {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   --border-radius: 14px;
   height: 52px;
   font-weight: 700;
   font-size: 15px;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
 }
 
 ion-fab-button {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
 }
 
 @media (max-width: 600px) {

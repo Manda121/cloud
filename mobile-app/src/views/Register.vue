@@ -193,7 +193,7 @@ async function onSubmit() {
 
 .form-label ion-icon {
   font-size: 18px;
-  color: #667eea;
+  color: #f59e0b;
 }
 
 .input-wrapper {
@@ -218,8 +218,8 @@ async function onSubmit() {
 }
 
 .custom-input:focus-within {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
 }
 
 .toggle-password {
@@ -243,7 +243,7 @@ async function onSubmit() {
 
 .submit-btn {
   margin-top: 16px;
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   --border-radius: 12px;
   height: 50px;
   font-weight: 600;

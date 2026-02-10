@@ -19,10 +19,12 @@ import {
   where,
   updateDoc,
   doc,
+  getDoc,
   addDoc,
   serverTimestamp,
   GeoPoint,
   Timestamp,
+  arrayUnion,
 } from 'firebase/firestore';
 
 const FIRESTORE_COLLECTION = 'signalements';
@@ -212,7 +214,7 @@ export async function syncLocalToFirestore(): Promise<number> {
 
     for (const sig of unsyncedLocals) {
       try {
-        await addDoc(collection(db, FIRESTORE_COLLECTION), {
+        const docRef = await addDoc(collection(db, FIRESTORE_COLLECTION), {
           uid: user.uid,
           email: user.email,
           description: sig.description ?? '',
@@ -225,18 +227,31 @@ export async function syncLocalToFirestore(): Promise<number> {
           surface_m2: sig.surface_m2 ?? null,
           budget: sig.budget ?? null,
           date_signalement: sig.date_signalement ?? '',
-          photos: sig.photos ?? [],
+          photo_ids: Array.isArray(sig.photo_ids) ? sig.photo_ids : [],
+          photo_urls: [],
+          photos: [],
           source: 'FIREBASE',
           synced: false,
           id_statut: sig.id_statut ?? 1,
           created_at: serverTimestamp(),
         });
 
+        // Si on a des photo_ids, mettre à jour le signalement_id dans IndexedDB
+        if (Array.isArray(sig.photo_ids) && sig.photo_ids.length > 0) {
+          try {
+            const { updatePhotosSignalementId } = await import('./photoStorage');
+            await updatePhotosSignalementId(sig.photo_ids, docRef.id);
+          } catch (err: any) {
+            console.warn('[Sync] Échec updatePhotosSignalementId après push local → Firestore:', err?.message || err);
+          }
+        }
+
         // Marquer le signalement local comme synced vers Firestore
         const idx = locals.findIndex((s) => s.id_signalement === sig.id_signalement);
         if (idx >= 0) {
           locals[idx].synced = true;
           locals[idx].source = 'FIREBASE';
+          locals[idx].firestore_id = docRef.id;
         }
         count++;
       } catch (err: any) {
@@ -253,6 +268,67 @@ export async function syncLocalToFirestore(): Promise<number> {
   }
 }
 
+// =====================================================
+// SYNCHRONISATION DES PHOTOS INDEXEDDB → FIREBASE STORAGE
+// =====================================================
+
+/**
+ * Upload les photos non synchronisées (IndexedDB) vers Firebase Storage,
+ * puis écrit les URLs dans le doc Firestore du signalement (champ photo_urls).
+ */
+export async function syncPhotosToStorage(): Promise<number> {
+  try {
+    await ensureAuthenticated();
+  } catch {
+    // Continue anyway
+  }
+
+  const user = firebaseAuth.currentUser;
+  if (!user) return 0;
+
+  const { getUnsyncedPhotos, markPhotoSynced } = await import('./photoStorage');
+  const { uploadPhotoToStorage } = await import('./photoUpload');
+
+  let uploaded = 0;
+  const unsyncedPhotos = await getUnsyncedPhotos();
+  if (unsyncedPhotos.length === 0) return 0;
+
+  for (const photo of unsyncedPhotos) {
+    try {
+      const signalementId = photo.signalement_id;
+      if (!signalementId) continue;
+
+      const sigDocRef = doc(db, FIRESTORE_COLLECTION, signalementId);
+      const sigSnap = await getDoc(sigDocRef);
+      if (!sigSnap.exists()) {
+        // Le signalement n'est pas encore dans Firestore (ex: totalement offline)
+        continue;
+      }
+
+      const sigData: any = sigSnap.data();
+      const existing = Array.isArray(sigData?.photo_urls) ? sigData.photo_urls : [];
+      const already = existing.some((p: any) => p && (p.photo_id === photo.id || p.photoId === photo.id));
+      if (already) {
+        await markPhotoSynced(photo.id);
+        continue;
+      }
+
+      const res = await uploadPhotoToStorage({ signalementId, photoId: photo.id });
+
+      await updateDoc(sigDocRef, {
+        photo_urls: arrayUnion({ photo_id: photo.id, url: res.downloadURL, path: res.path }),
+      });
+
+      await markPhotoSynced(photo.id);
+      uploaded++;
+    } catch (err: any) {
+      console.warn('[Sync] Échec upload photo → Storage:', err?.message || err);
+    }
+  }
+
+  return uploaded;
+}
+
 /**
  * Synchronisation complète :
  * 1. localStorage → Firestore (si des signalements locaux existent)
@@ -262,12 +338,21 @@ export async function syncLocalToFirestore(): Promise<number> {
  */
 export async function fullSync(): Promise<{
   localToFirestore: number;
+  photosToStorage: number;
   firestoreToBackend: SyncResult | null;
   statusUpdates: number;
   notifications: number;
 }> {
   // Étape 1 : Local → Firestore
   const localCount = await syncLocalToFirestore();
+
+  // Étape 1b : Photos (IndexedDB) → Firebase Storage
+  let photosCount = 0;
+  try {
+    photosCount = await syncPhotosToStorage();
+  } catch (err: any) {
+    console.warn('[Sync] Photos to Storage sync skipped:', err.message);
+  }
 
   // Étape 2 : Firestore → Backend
   let backendResult: SyncResult | null = null;
@@ -295,6 +380,7 @@ export async function fullSync(): Promise<{
 
   return {
     localToFirestore: localCount,
+    photosToStorage: photosCount,
     firestoreToBackend: backendResult,
     statusUpdates: statusUpdatesCount,
     notifications: notificationsCount,

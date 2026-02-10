@@ -59,13 +59,25 @@
             </div>
           </div>
 
-          <div class="photo-gallery" v-if="remoteData?.photos?.length">
-            <h3>Photos</h3>
+          <!-- Photos depuis photo_urls (Firebase Storage) ou photos locales -->
+          <div class="photo-gallery" v-if="displayPhotos.length > 0">
+            <h3>
+              <ion-icon :icon="imageOutline"></ion-icon>
+              Photos
+              <span class="photo-count">({{ displayPhotos.length }})</span>
+            </h3>
             <div class="photos-grid">
-              <div class="photo-thumb" v-for="(p, idx) in remoteData.photos" :key="idx">
-                <img :src="getPhotoUrl(p)" @error="onPhotoError($event)" />
+              <div class="photo-thumb" v-for="(url, idx) in displayPhotos" :key="idx">
+                <img :src="url" @error="onPhotoError($event)" loading="lazy" />
               </div>
             </div>
+          </div>
+          
+          <!-- Message si photos en attente de sync -->
+          <div class="photo-sync-info" v-if="photosPendingSync > 0">
+            <ion-icon :icon="cloudUploadOutline"></ion-icon>
+            <span>{{ photosPendingSync }} photo(s) en attente de synchronisation</span>
+            <small>Utilisez le menu "Synchroniser" pour les envoyer vers le cloud</small>
           </div>
 
           <!-- Changer le statut -->
@@ -136,9 +148,24 @@
 
           <div class="form-group">
             <label class="form-label">
-              <ion-icon :icon="documentTextOutline"></ion-icon>
+              <ion-icon :icon="imageOutline"></ion-icon>
               Photos (vous pouvez en ajouter plusieurs)
             </label>
+            
+            <!-- Guide utilisateur pour les photos -->
+            <div class="photo-guide">
+              <ion-icon :icon="informationCircleOutline"></ion-icon>
+              <div class="guide-text">
+                <strong>Comment ça marche :</strong>
+                <ol>
+                  <li>Prenez ou choisissez vos photos</li>
+                  <li>Elles sont sauvegardées localement sur votre appareil</li>
+                  <li>Cliquez sur <strong>"Synchroniser"</strong> dans le menu pour les envoyer vers le cloud</li>
+                </ol>
+                <small>Vos photos seront alors visibles sur tous vos appareils connectés.</small>
+              </div>
+            </div>
+            
             <div class="photo-actions">
               <ion-button size="small" color="primary" @click="takePhoto">
                 <ion-icon :icon="cameraOutline" slot="start"></ion-icon>
@@ -192,15 +219,17 @@
               <div class="form-group half">
                 <label class="form-label">
                   <ion-icon :icon="cashOutline"></ion-icon>
-                  Budget (Ar)
+                  Coût estimé
                 </label>
-                <ion-input 
-                  type="number" 
-                  step="0.01" 
-                  v-model.number="budget" 
-                  placeholder="Ex: 50000"
-                  class="custom-input"
-                />
+                <div class="calculated-budget">
+                  <span v-if="calculatedBudget" class="budget-value">
+                    {{ Number(calculatedBudget).toLocaleString() }} Ar
+                  </span>
+                  <span v-else class="budget-placeholder">
+                    Entrez la surface
+                  </span>
+                  <span class="budget-hint">{{ prix_m2.toLocaleString() }} Ar/m²</span>
+                </div>
               </div>
             </div>
 
@@ -264,7 +293,7 @@ import {
   resizeOutline, cashOutline, arrowBackOutline, documentTextOutline,
   alertCircleOutline, checkmarkCircleOutline, sendOutline, cameraOutline,
   swapHorizontalOutline, alertOutline, timeOutline, checkmarkDoneOutline,
-  cloudOfflineOutline
+  cloudOfflineOutline, imageOutline, cloudUploadOutline, informationCircleOutline
 } from 'ionicons/icons';
 import { createSignalement, getSignalementById, getLocalSignalements, saveLocalSignalement, updateLocalSignalement } from '../services/signalement';
 import { getBackendUrl } from '../services/backend';
@@ -276,6 +305,7 @@ import { createNotification } from '../services/notification';
 import { takePhotoFromCamera, pickPhotoFromGallery } from '../composables/usePhotoGallery';
 import { Capacitor } from '@capacitor/core';
 import WebcamCapture from '../components/WebcamCapture.vue';
+import { getPhotosBySignalement } from '../services/photoStorage';
 
 const route = useRoute();
 const router = useRouter();
@@ -305,13 +335,120 @@ const statusSuccess = ref(false);
 const statusError = ref<string | null>(null);
 const statusOfflineMsg = ref<string | null>(null);
 
+// =============================================
+// PRIX PAR M² - Récupéré depuis le backend
+// Stratégie:
+//   1. Essayer de GET le prix depuis le backend
+//   2. Si OK -> stocker en localStorage pour usage hors-ligne
+//   3. Si backend indisponible -> utiliser la valeur en localStorage
+//   4. Si rien en localStorage -> utiliser la valeur par défaut (15000)
+// =============================================
+const PRIX_M2_DEFAULT = 15000;
+const PRIX_M2_STORAGE_KEY = 'roadwatch_prix_m2';
+const prix_m2 = ref<number>(getSavedPrixM2());
+const loadingPrix = ref(false);
+
+/** Lire le prix sauvegardé en localStorage (ou défaut) */
+function getSavedPrixM2(): number {
+  try {
+    const saved = localStorage.getItem(PRIX_M2_STORAGE_KEY);
+    if (saved) {
+      const val = Number(saved);
+      if (!isNaN(val) && val > 0) return val;
+    }
+  } catch (_) { /* ignore */ }
+  return PRIX_M2_DEFAULT;
+}
+
+/** Sauvegarder le prix en localStorage pour le mode hors-ligne */
+function savePrixM2(prix: number): void {
+  try {
+    localStorage.setItem(PRIX_M2_STORAGE_KEY, String(prix));
+  } catch (_) { /* ignore */ }
+}
+
+// Budget calculé automatiquement = surface × prix/m²
+const calculatedBudget = computed(() => {
+  if (surface_m2.value && prix_m2.value) {
+    return Math.round(surface_m2.value * prix_m2.value);
+  }
+  return null;
+});
+
 const statusOptions = [
   { id: 1, label: 'Nouveau', cssClass: 'opt-nouveau', icon: alertOutline },
   { id: 2, label: 'En cours', cssClass: 'opt-encours', icon: timeOutline },
   { id: 3, label: 'Terminé', cssClass: 'opt-termine', icon: checkmarkDoneOutline },
 ];
 
+// Photos locales en attente de sync
+const localPhotos = ref<string[]>([]);
+const photosPendingSync = ref(0);
+
+/**
+ * Photos à afficher: priorité aux photo_urls (Storage), sinon photos locales
+ */
+const displayPhotos = computed(() => {
+  // 1. Firebase Storage URLs (déjà synchronisées)
+  if (remoteData.value?.photo_urls && Array.isArray(remoteData.value.photo_urls)) {
+    const urls = remoteData.value.photo_urls
+      .map((p: any) => p?.url || p)
+      .filter((u: string) => u && typeof u === 'string');
+    if (urls.length > 0) return urls;
+  }
+  
+  // 2. Photos backend classiques
+  if (remoteData.value?.photos && Array.isArray(remoteData.value.photos)) {
+    return remoteData.value.photos.map((p: any) => getPhotoUrl(p)).filter(Boolean);
+  }
+  
+  // 3. Photos locales (IndexedDB)
+  return localPhotos.value;
+});
+
+/**
+ * Charge le prix par m² depuis le backend.
+ * Si le backend est indisponible (mode Firebase, hors-ligne),
+ * on utilise le dernier prix enregistré en localStorage.
+ * 
+ * TODO: Adapter l'URL quand le fichier de config backend sera prêt
+ */
+async function loadPrixM2() {
+  loadingPrix.value = true;
+  try {
+    const backendUrl = getBackendUrl();
+    // Appel au backend pour récupérer le prix
+    const res = await fetch(`${backendUrl}/api/config/tarifs`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      // On s'adapte à n'importe quel format de réponse
+      const prix = json?.data?.prix_m2 ?? json?.prix_m2 ?? json?.tarifs?.prix_m2;
+      if (prix && typeof prix === 'number' && prix > 0) {
+        prix_m2.value = prix;
+        savePrixM2(prix); // Sauvegarder pour le mode hors-ligne
+        console.log('[Config] Prix par m² récupéré du backend:', prix, 'Ar');
+        return;
+      }
+    }
+    throw new Error('Backend indisponible ou réponse invalide');
+  } catch (err) {
+    // Backend indisponible -> on utilise le localStorage
+    const savedPrix = getSavedPrixM2();
+    prix_m2.value = savedPrix;
+    console.warn('[Config] Backend indisponible, prix localStorage:', savedPrix, 'Ar -', err);
+  } finally {
+    loadingPrix.value = false;
+  }
+}
+
 onMounted(async () => {
+  // Charger le prix par m² (backend -> localStorage -> défaut)
+  await loadPrixM2();
+  
   const id = (route.query.id as string) || null;
   if (id) {
     viewing.value = true;
@@ -323,6 +460,9 @@ onMounted(async () => {
       budget.value = data.budget ?? null;
       date_signalement.value = data.date_signalement ?? date_signalement.value;
       newStatusId.value = data.id_statut ?? 1;
+      
+      // Charger les photos locales depuis IndexedDB si pas de photo_urls
+      await loadLocalPhotos(id, data);
     } catch (err: any) {
       console.warn('Fetch signalement failed', err);
       const locals = getLocalSignalements();
@@ -334,10 +474,36 @@ onMounted(async () => {
         budget.value = local.budget ?? null;
         date_signalement.value = local.date_signalement ?? date_signalement.value;
         newStatusId.value = local.id_statut ?? 1;
+        
+        // Charger les photos locales depuis IndexedDB
+        await loadLocalPhotos(id, local);
       }
     }
   }
 });
+
+/**
+ * Charge les photos depuis IndexedDB pour un signalement donné
+ */
+async function loadLocalPhotos(signalementId: string, data: any) {
+  try {
+    // Si on a déjà des photo_urls Firebase Storage, pas besoin de charger IndexedDB
+    if (data?.photo_urls && Array.isArray(data.photo_urls) && data.photo_urls.length > 0) {
+      console.log('[Signalement] Photos déjà dans Storage, skip IndexedDB');
+      return;
+    }
+    
+    // Charger depuis IndexedDB
+    const storedPhotos = await getPhotosBySignalement(signalementId);
+    if (storedPhotos.length > 0) {
+      localPhotos.value = storedPhotos.map(p => p.data);
+      photosPendingSync.value = storedPhotos.filter(p => !p.synced).length;
+      console.log('[Signalement] Photos locales chargées:', storedPhotos.length, 'dont', photosPendingSync.value, 'en attente');
+    }
+  } catch (err) {
+    console.warn('[Signalement] Échec chargement photos locales:', err);
+  }
+}
 
 function formatCoordinates() {
   // Utiliser latitude/longitude renvoyés par l'API
@@ -430,7 +596,8 @@ async function onSubmit() {
     id_signalement: localId,
     description: description.value,
     surface_m2: surface_m2.value,
-    budget: budget.value,
+    budget: calculatedBudget.value,
+    prix_m2: prix_m2.value,
     date_signalement: date_signalement.value,
     geom: {
       type: 'Point',
@@ -442,7 +609,7 @@ async function onSubmit() {
     id_statut: 1, // Par défaut 'Nouveau'
     created_at: new Date().toISOString()
   };
-  saveLocalSignalement(localSignalement);
+  await saveLocalSignalement(localSignalement);
 
   try {
     const created = await createSignalement({
@@ -450,7 +617,8 @@ async function onSubmit() {
       latitude: lat.value,
       longitude: lng.value,
       surface_m2: surface_m2.value ?? undefined,
-      budget: budget.value ?? undefined,
+      budget: calculatedBudget.value ?? undefined,
+      prix_m2: prix_m2.value,
       photos: selectedPreviews.value.length ? selectedPreviews.value : undefined,
       date_signalement: date_signalement.value,
     });
@@ -520,10 +688,18 @@ function onFilesSelected(ev: Event) {
 
   Array.from(input.files).forEach((file) => {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const result = reader.result as string;
       if (result) {
-        selectedPreviews.value.push(result);
+        // Compresser l'image avant preview pour économiser mémoire
+        try {
+          const { compressImage } = await import('../services/photoStorage');
+          const compressed = await compressImage(result, 1024, 0.7);
+          selectedPreviews.value.push(compressed);
+        } catch (err) {
+          console.warn('[Signalement] Compression image failed, using original');
+          selectedPreviews.value.push(result);
+        }
         selectedFiles.value.push(file);
       }
     };
@@ -545,7 +721,15 @@ async function takePhoto() {
     try {
       const photo = await takePhotoFromCamera();
       if (photo) {
-        selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+        try {
+          const dataUrl = photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath;
+          const { compressImage } = await import('../services/photoStorage');
+          const compressed = await compressImage(dataUrl, 1200, 0.75);
+          selectedPreviews.value.push(compressed);
+        } catch (e) {
+          console.warn('[Signalement] Compression failed for native photo, using original');
+          selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+        }
         return;
       }
     } catch (e) {
@@ -567,8 +751,15 @@ async function takePhoto() {
   }
 }
 
-function onWebcamCaptured(dataUrl: string) {
-  selectedPreviews.value.push(dataUrl);
+async function onWebcamCaptured(dataUrl: string) {
+  try {
+    const { compressImage } = await import('../services/photoStorage');
+    const compressed = await compressImage(dataUrl, 1200, 0.75);
+    selectedPreviews.value.push(compressed);
+  } catch (err) {
+    console.warn('[Signalement] Compression failed for webcam photo, using original');
+    selectedPreviews.value.push(dataUrl);
+  }
 }
 
 async function openGallery() {
@@ -576,7 +767,15 @@ async function openGallery() {
     // Essayer d'utiliser le sélecteur natif (Capacitor)
     const photo = await pickPhotoFromGallery();
     if (photo) {
-      selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+      try {
+        const dataUrl = photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath;
+        const { compressImage } = await import('../services/photoStorage');
+        const compressed = await compressImage(dataUrl, 1200, 0.75);
+        selectedPreviews.value.push(compressed);
+      } catch (err) {
+        console.warn('[Signalement] Compression failed for gallery photo, using original');
+        selectedPreviews.value.push(photo.base64 ? `data:image/jpeg;base64,${photo.base64}` : photo.webviewPath);
+      }
       return;
     }
   } catch (e) {
@@ -834,11 +1033,11 @@ function goBack() {
 
 .info-card ion-icon {
   font-size: 26px;
-  color: #667eea;
+  color: #f59e0b;
   flex-shrink: 0;
   padding: 10px;
   border-radius: 12px;
-  background: rgba(102, 126, 234, 0.08);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .info-content {
@@ -878,10 +1077,10 @@ function goBack() {
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
   border-radius: 16px;
   color: white;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
+  box-shadow: 0 4px 16px rgba(45, 55, 72, 0.35);
 }
 
 .location-preview ion-icon {
@@ -932,7 +1131,7 @@ function goBack() {
 
 .form-label ion-icon {
   font-size: 16px;
-  color: #667eea;
+  color: #f59e0b;
 }
 
 .custom-textarea,
@@ -953,8 +1152,8 @@ function goBack() {
 
 .custom-textarea:focus-within,
 .custom-input:focus-within {
-  border-color: #667eea !important;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
 }
 
 .custom-datetime {
@@ -964,6 +1163,36 @@ function goBack() {
   border-radius: 12px;
   padding: 8px;
   color: #2d3748;
+}
+
+/* Budget calculé automatiquement */
+.calculated-budget {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(45, 55, 72, 0.05) 0%, rgba(74, 85, 104, 0.08) 100%);
+  border: 2px solid #d1d9e6;
+  border-radius: 12px;
+  min-height: 48px;
+}
+
+.calculated-budget .budget-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2d3748;
+  line-height: 1.2;
+}
+
+.calculated-budget .budget-placeholder {
+  font-size: 14px;
+  color: #a0aec0;
+  font-style: italic;
+}
+
+.calculated-budget .budget-hint {
+  font-size: 11px;
+  color: #718096;
+  margin-top: 4px;
 }
 
 .photo-actions {
@@ -1012,8 +1241,90 @@ function goBack() {
   justify-content: center;
 }
 
-.photo-gallery h3 { margin: 12px 0 8px; color: #2d3748; }
+.photo-gallery h3 { 
+  margin: 12px 0 8px; 
+  color: #2d3748;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.photo-gallery h3 ion-icon {
+  color: #f59e0b;
+}
+.photo-gallery .photo-count {
+  font-weight: 400;
+  font-size: 14px;
+  color: #718096;
+}
 .photos-grid { display:flex; gap:12px; flex-wrap:wrap; }
+
+/* Guide utilisateur pour les photos */
+.photo-guide {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: linear-gradient(135deg, #e0e7ff 0%, #ede9fe 100%);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  border: 1px solid #c7d2fe;
+}
+.photo-guide > ion-icon {
+  font-size: 24px;
+  color: #6366f1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.photo-guide .guide-text {
+  flex: 1;
+}
+.photo-guide .guide-text strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #4338ca;
+  font-size: 14px;
+}
+.photo-guide ol {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #4c1d95;
+}
+.photo-guide ol li {
+  margin-bottom: 4px;
+}
+.photo-guide small {
+  display: block;
+  margin-top: 8px;
+  color: #6b21a8;
+  font-size: 12px;
+}
+
+/* Info sync photos */
+.photo-sync-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-radius: 12px;
+  margin-top: 12px;
+  border: 1px solid #f59e0b;
+  text-align: center;
+}
+.photo-sync-info > ion-icon {
+  font-size: 28px;
+  color: #d97706;
+}
+.photo-sync-info span {
+  font-weight: 600;
+  color: #92400e;
+  font-size: 14px;
+}
+.photo-sync-info small {
+  color: #b45309;
+  font-size: 12px;
+}
 
 .alert {
   display: flex;
@@ -1065,8 +1376,8 @@ function goBack() {
 }
 
 .submit-btn {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
+  --background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35);
 }
 
 /* ============================
@@ -1093,7 +1404,7 @@ function goBack() {
 
 .section-title ion-icon {
   font-size: 20px;
-  color: #667eea;
+  color: #f59e0b;
 }
 
 .status-options {
@@ -1159,12 +1470,12 @@ function goBack() {
 }
 
 .save-status-btn {
-  --background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   --border-radius: 12px;
   height: 48px;
   font-weight: 700;
   margin-bottom: 12px;
-  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
 }
 
 .save-status-btn[disabled] {
